@@ -79,8 +79,9 @@ class RabbitConfig {
     fun successContainerFactory(cf: ConnectionFactory): SimpleRabbitListenerContainerFactory =
         SimpleRabbitListenerContainerFactory().apply {
             setConnectionFactory(cf)
-            setConcurrentConsumers(1)
-            setPrefetchCount(1)
+            setConcurrentConsumers(10)
+            setMaxConcurrentConsumers(50)
+            setPrefetchCount(10)
             setAcknowledgeMode(org.springframework.amqp.core.AcknowledgeMode.MANUAL)
             setMessageConverter(jsonMessageConverter())
         }

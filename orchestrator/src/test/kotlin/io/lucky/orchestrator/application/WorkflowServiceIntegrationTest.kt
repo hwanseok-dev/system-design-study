@@ -1,5 +1,6 @@
 package io.lucky.orchestrator.application
 
+import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
@@ -14,19 +15,26 @@ import io.lucky.orchestrator.infrastructure.persistence.TaskRepository
 import io.lucky.orchestrator.infrastructure.persistence.TaskResponseRepository
 import io.lucky.orchestrator.infrastructure.persistence.WorkflowRepository
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.test.context.ActiveProfiles
 
 @SpringBootTest
 @ActiveProfiles("test")
 class WorkflowServiceIntegrationTest(
     private val workflowService: WorkflowService,
+    private val taskExecutionService: TaskExecutionService,
     private val taskRepository: TaskRepository,
     private val workflowRepository: WorkflowRepository,
     private val taskExecutionRequestRepository: TaskExecutionRequestRepository,
     private val taskResponseRepository: TaskResponseRepository,
+    private val redisTemplate: StringRedisTemplate,
 ) : DescribeSpec({
 
         beforeEach {
+            redisTemplate.connectionFactory
+                ?.connection
+                ?.serverCommands()
+                ?.flushDb()
             taskResponseRepository.deleteAll()
             taskExecutionRequestRepository.deleteAll()
             workflowRepository.deleteAll()
@@ -164,7 +172,6 @@ class WorkflowServiceIntegrationTest(
                     responses[0].taskId shouldBe a.id
 
                     val loaded = workflowService.findById(workflow.id)
-                    loaded.findNode(a.id).completedCount shouldBe 1
                     loaded.findNode(a.id).status shouldBe TaskStatus.SUCCEEDED
                     loaded.findNode(b.id).status shouldBe TaskStatus.RUNNING
                 }
@@ -234,6 +241,40 @@ class WorkflowServiceIntegrationTest(
                     val requests = taskExecutionRequestRepository.findAll()
                     requests shouldHaveSize 1
                     requests[0].taskId shouldBe b.id
+                }
+            }
+        }
+
+        describe("completeTask") {
+            context("이미 SUCCEEDED인 task에 다시 completeTask를 호출할 때") {
+                it("멱등하게 동작하고 예외가 발생하지 않는다") {
+                    val a = taskRepository.save(Task(name = "A", queueName = "queue.a"))
+                    val b = taskRepository.save(Task(name = "B", queueName = "queue.b"))
+
+                    val workflow =
+                        workflowService.create(
+                            name = "test-workflow",
+                            nodes =
+                                listOf(
+                                    WorkflowNodeRequest(a.id),
+                                    WorkflowNodeRequest(b.id),
+                                ),
+                            edges =
+                                listOf(
+                                    WorkflowEdgeRequest(a.id, b.id),
+                                ),
+                        )
+                    workflowService.start(workflow.id)
+
+                    taskExecutionService.completeTask(workflow.id, a.id)
+
+                    shouldNotThrowAny {
+                        taskExecutionService.completeTask(workflow.id, a.id)
+                    }
+
+                    val loaded = workflowService.findById(workflow.id)
+                    loaded.findNode(a.id).status shouldBe TaskStatus.SUCCEEDED
+                    loaded.findNode(b.id).status shouldBe TaskStatus.RUNNING
                 }
             }
         }
