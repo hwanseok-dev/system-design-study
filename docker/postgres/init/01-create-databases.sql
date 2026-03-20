@@ -1,2 +1,5 @@
 CREATE DATABASE orchestrator;
 GRANT ALL PRIVILEGES ON DATABASE orchestrator TO study;
+
+CREATE DATABASE security;
+GRANT ALL PRIVILEGES ON DATABASE security TO study;
