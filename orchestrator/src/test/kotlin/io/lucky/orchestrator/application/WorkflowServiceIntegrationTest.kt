@@ -8,6 +8,7 @@ import io.lucky.orchestrator.api.WorkflowNodeRequest
 import io.lucky.orchestrator.domain.task.Task
 import io.lucky.orchestrator.domain.workflow.TaskStatus
 import io.lucky.orchestrator.domain.workflow.WorkflowStatus
+import io.lucky.orchestrator.infrastructure.outbox.TaskExecutionRequestRepository
 import io.lucky.orchestrator.infrastructure.persistence.TaskRepository
 import io.lucky.orchestrator.infrastructure.persistence.WorkflowRepository
 import org.springframework.boot.test.context.SpringBootTest
@@ -19,9 +20,11 @@ class WorkflowServiceIntegrationTest(
     private val workflowService: WorkflowService,
     private val taskRepository: TaskRepository,
     private val workflowRepository: WorkflowRepository,
+    private val taskExecutionRequestRepository: TaskExecutionRequestRepository,
 ) : DescribeSpec({
 
         beforeEach {
+            taskExecutionRequestRepository.deleteAll()
             workflowRepository.deleteAll()
             taskRepository.deleteAll()
         }
@@ -88,6 +91,35 @@ class WorkflowServiceIntegrationTest(
                     loaded.findNode(a.id).status shouldBe TaskStatus.RUNNING
                     loaded.findNode(b.id).status shouldBe TaskStatus.WAITING
                     loaded.findNode(c.id).status shouldBe TaskStatus.WAITING
+                }
+            }
+
+            context("시작 시 task_execution_request가 저장될 때") {
+                it("root node에 대한 실행 요청이 저장된다") {
+                    val a = taskRepository.save(Task(name = "A", queueName = "queue.a"))
+                    val b = taskRepository.save(Task(name = "B", queueName = "queue.b"))
+
+                    val workflow =
+                        workflowService.create(
+                            name = "test-workflow",
+                            nodes =
+                                listOf(
+                                    WorkflowNodeRequest(a.id),
+                                    WorkflowNodeRequest(b.id),
+                                ),
+                            edges =
+                                listOf(
+                                    WorkflowEdgeRequest(a.id, b.id),
+                                ),
+                        )
+
+                    workflowService.start(workflow.id)
+
+                    val requests = taskExecutionRequestRepository.findAll()
+                    requests shouldHaveSize 1
+                    requests[0].workflowId shouldBe workflow.id
+                    requests[0].taskId shouldBe a.id
+                    requests[0].published shouldBe false
                 }
             }
         }

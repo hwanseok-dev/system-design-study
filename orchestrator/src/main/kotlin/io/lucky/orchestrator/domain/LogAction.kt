@@ -5,4 +5,5 @@ object LogAction {
     const val START_WORKFLOW = "startWorkflow"
     const val COMPLETE_TASK = "completeTask"
     const val FAIL_TASK = "failTask"
+    const val PUBLISH_TASK_EXECUTION = "publishTaskExecution"
 }

@@ -16,6 +16,11 @@ spring:
     port: 5678
     username: admin
     password: admin
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    cache:
+      channel:
+        size: 25
   data:
     redis:
       host: localhost
