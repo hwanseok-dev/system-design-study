@@ -1,11 +1,22 @@
 package io.lucky.orchestrator.infrastructure.persistence
 
 import io.lucky.orchestrator.domain.workflow.Workflow
+import io.lucky.orchestrator.domain.workflow.WorkflowStatus
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import java.util.Optional
 
 interface WorkflowRepository : JpaRepository<Workflow, Long> {
+    @Query(
+        """
+        SELECT DISTINCT w FROM Workflow w
+        LEFT JOIN FETCH w.nodes n
+        LEFT JOIN FETCH n.task
+        WHERE w.status = :status
+        """,
+    )
+    fun findByStatus(status: WorkflowStatus): List<Workflow>
+
     @Query(
         """
         SELECT DISTINCT w FROM Workflow w

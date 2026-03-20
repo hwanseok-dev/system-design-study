@@ -13,4 +13,5 @@ object LogAction {
     const val SKIP_SUCCESS_ALREADY_FAILED = "skipSuccessAlreadyFailed"
     const val SKIP_FAILURE_ALREADY_FAILED = "skipFailureAlreadyFailed"
     const val SKIP_DUPLICATE_MESSAGE = "skipDuplicateMessage"
+    const val SYNC_COUNT = "syncCount"
 }

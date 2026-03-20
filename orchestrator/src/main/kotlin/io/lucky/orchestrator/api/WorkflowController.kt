@@ -38,6 +38,11 @@ class WorkflowController(
         )
     }
 
+    @GetMapping("/{id}/progress")
+    fun getProgress(
+        @PathVariable id: Long,
+    ): WorkflowProgressResponse = workflowService.getProgress(id)
+
     @GetMapping("/{id}")
     fun findById(
         @PathVariable id: Long,

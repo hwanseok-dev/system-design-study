@@ -1,8 +1,10 @@
 package io.lucky.orchestrator.application
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.lucky.orchestrator.api.TaskProgressResponse
 import io.lucky.orchestrator.api.WorkflowEdgeRequest
 import io.lucky.orchestrator.api.WorkflowNodeRequest
+import io.lucky.orchestrator.api.WorkflowProgressResponse
 import io.lucky.orchestrator.domain.EntityNotFoundException
 import io.lucky.orchestrator.domain.LogAction
 import io.lucky.orchestrator.domain.workflow.Workflow
@@ -109,6 +111,31 @@ class WorkflowService(
         logger.info {
             "action=${LogAction.FAIL_TASK} workflowId=$workflowId taskId=$taskId"
         }
+    }
+
+    @Transactional(readOnly = true)
+    fun getProgress(workflowId: Long): WorkflowProgressResponse {
+        val workflow = getWorkflow(workflowId)
+
+        val tasks =
+            workflow.nodes.map { node ->
+                val countKey = "{wf:$workflowId}:task:${node.task.id}:count"
+                val realtimeCount =
+                    redisTemplate.opsForValue().get(countKey)?.toInt()
+                        ?: node.completedCount
+
+                TaskProgressResponse(
+                    taskName = node.task.name,
+                    completedCount = realtimeCount,
+                    expectedCount = node.expectedCount,
+                )
+            }
+
+        return WorkflowProgressResponse(
+            workflowId = workflowId,
+            status = workflow.status.name,
+            tasks = tasks,
+        )
     }
 
     fun getExpectedCount(

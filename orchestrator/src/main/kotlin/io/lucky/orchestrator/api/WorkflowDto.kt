@@ -35,3 +35,15 @@ data class StartWorkflowResponse(
     val status: String,
     val runningTasks: List<String>,
 )
+
+data class WorkflowProgressResponse(
+    val workflowId: Long,
+    val status: String,
+    val tasks: List<TaskProgressResponse>,
+)
+
+data class TaskProgressResponse(
+    val taskName: String,
+    val completedCount: Int,
+    val expectedCount: Int,
+)
