@@ -6,4 +6,6 @@ object LogAction {
     const val COMPLETE_TASK = "completeTask"
     const val FAIL_TASK = "failTask"
     const val PUBLISH_TASK_EXECUTION = "publishTaskExecution"
+    const val HANDLE_SUCCESS_RESPONSE = "handleSuccessResponse"
+    const val HANDLE_SUCCESS_RESPONSE_FAILED = "handleSuccessResponseFailed"
 }
