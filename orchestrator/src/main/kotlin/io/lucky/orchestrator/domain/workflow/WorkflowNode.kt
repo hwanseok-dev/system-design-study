@@ -17,10 +17,10 @@ import jakarta.persistence.UniqueConstraint
 
 @Entity
 @Table(
-    name = "workflow_task",
+    name = "workflow_node",
     uniqueConstraints = [UniqueConstraint(columnNames = ["workflow_id", "task_id"])],
 )
-class WorkflowTask(
+class WorkflowNode(
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long = 0,
     @ManyToOne(fetch = FetchType.LAZY)

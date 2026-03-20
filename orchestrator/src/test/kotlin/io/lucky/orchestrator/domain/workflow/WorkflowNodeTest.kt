@@ -5,17 +5,17 @@ import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
 import io.lucky.orchestrator.domain.task.Task
 
-class WorkflowTaskTest :
+class WorkflowNodeTest :
     DescribeSpec({
 
-        fun createWorkflowTask(
+        fun createNode(
             status: TaskStatus = TaskStatus.CREATED,
             expectedCount: Int = 10,
             completedCount: Int = 0,
-        ): WorkflowTask {
+        ): WorkflowNode {
             val workflow = Workflow(name = "test-workflow")
             val task = Task(name = "test-task", queueName = "queue.test")
-            return WorkflowTask(
+            return WorkflowNode(
                 workflow = workflow,
                 task = task,
                 status = status,
@@ -27,9 +27,9 @@ class WorkflowTaskTest :
         describe("markWaiting") {
             context("CREATED 상태일 때") {
                 it("WAITING으로 전이된다") {
-                    val wt = createWorkflowTask()
-                    wt.markWaiting()
-                    wt.status shouldBe TaskStatus.WAITING
+                    val node = createNode()
+                    node.markWaiting()
+                    node.status shouldBe TaskStatus.WAITING
                 }
             }
         }
@@ -37,16 +37,16 @@ class WorkflowTaskTest :
         describe("markRunning") {
             context("WAITING 상태일 때") {
                 it("RUNNING으로 전이된다") {
-                    val wt = createWorkflowTask(status = TaskStatus.WAITING)
-                    wt.markRunning()
-                    wt.status shouldBe TaskStatus.RUNNING
+                    val node = createNode(status = TaskStatus.WAITING)
+                    node.markRunning()
+                    node.status shouldBe TaskStatus.RUNNING
                 }
             }
 
             context("CREATED 상태일 때") {
                 it("예외가 발생한다") {
-                    val wt = createWorkflowTask()
-                    shouldThrow<IllegalStateException> { wt.markRunning() }
+                    val node = createNode()
+                    shouldThrow<IllegalStateException> { node.markRunning() }
                 }
             }
         }
@@ -54,9 +54,9 @@ class WorkflowTaskTest :
         describe("markSucceeded") {
             context("RUNNING 상태일 때") {
                 it("SUCCEEDED로 전이된다") {
-                    val wt = createWorkflowTask(status = TaskStatus.RUNNING)
-                    wt.markSucceeded()
-                    wt.status shouldBe TaskStatus.SUCCEEDED
+                    val node = createNode(status = TaskStatus.RUNNING)
+                    node.markSucceeded()
+                    node.status shouldBe TaskStatus.SUCCEEDED
                 }
             }
         }
@@ -64,24 +64,24 @@ class WorkflowTaskTest :
         describe("markFailed") {
             context("RUNNING 상태일 때") {
                 it("FAILED로 전이된다") {
-                    val wt = createWorkflowTask(status = TaskStatus.RUNNING)
-                    wt.markFailed()
-                    wt.status shouldBe TaskStatus.FAILED
+                    val node = createNode(status = TaskStatus.RUNNING)
+                    node.markFailed()
+                    node.status shouldBe TaskStatus.FAILED
                 }
             }
 
             context("WAITING 상태일 때 - parent 실패 전파") {
                 it("FAILED로 전이된다") {
-                    val wt = createWorkflowTask(status = TaskStatus.WAITING)
-                    wt.markFailed()
-                    wt.status shouldBe TaskStatus.FAILED
+                    val node = createNode(status = TaskStatus.WAITING)
+                    node.markFailed()
+                    node.status shouldBe TaskStatus.FAILED
                 }
             }
 
             context("SUCCEEDED 상태일 때") {
                 it("예외가 발생한다") {
-                    val wt = createWorkflowTask(status = TaskStatus.SUCCEEDED)
-                    shouldThrow<IllegalStateException> { wt.markFailed() }
+                    val node = createNode(status = TaskStatus.SUCCEEDED)
+                    shouldThrow<IllegalStateException> { node.markFailed() }
                 }
             }
         }
@@ -89,22 +89,22 @@ class WorkflowTaskTest :
         describe("isComplete") {
             context("completedCount가 expectedCount와 같을 때") {
                 it("true를 반환한다") {
-                    val wt = createWorkflowTask(expectedCount = 10, completedCount = 10)
-                    wt.isComplete() shouldBe true
+                    val node = createNode(expectedCount = 10, completedCount = 10)
+                    node.isComplete() shouldBe true
                 }
             }
 
             context("completedCount가 expectedCount보다 작을 때") {
                 it("false를 반환한다") {
-                    val wt = createWorkflowTask(expectedCount = 10, completedCount = 5)
-                    wt.isComplete() shouldBe false
+                    val node = createNode(expectedCount = 10, completedCount = 5)
+                    node.isComplete() shouldBe false
                 }
             }
 
             context("completedCount가 expectedCount를 초과할 때") {
                 it("true를 반환한다") {
-                    val wt = createWorkflowTask(expectedCount = 10, completedCount = 15)
-                    wt.isComplete() shouldBe true
+                    val node = createNode(expectedCount = 10, completedCount = 15)
+                    node.isComplete() shouldBe true
                 }
             }
         }

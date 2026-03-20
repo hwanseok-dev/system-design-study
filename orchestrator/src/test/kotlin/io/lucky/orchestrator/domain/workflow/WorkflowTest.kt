@@ -46,7 +46,7 @@ class WorkflowTest :
                     val wf = Workflow(name = "test")
                     val task = Task(id = 1, name = "A", queueName = "queue.a")
                     val wt = wf.addTask(task, 100)
-                    wf.workflowTasks shouldHaveSize 1
+                    wf.nodes shouldHaveSize 1
                     wt.expectedCount shouldBe 100
                 }
             }
@@ -96,9 +96,9 @@ class WorkflowTest :
                     running shouldHaveSize 1
                     running[0].task.name shouldBe "A"
                     wf.status shouldBe WorkflowStatus.RUNNING
-                    wf.findWorkflowTask(tasks.first.id).status shouldBe TaskStatus.RUNNING
-                    wf.findWorkflowTask(tasks.second.id).status shouldBe TaskStatus.WAITING
-                    wf.findWorkflowTask(tasks.third.id).status shouldBe TaskStatus.WAITING
+                    wf.findNode(tasks.first.id).status shouldBe TaskStatus.RUNNING
+                    wf.findNode(tasks.second.id).status shouldBe TaskStatus.WAITING
+                    wf.findNode(tasks.third.id).status shouldBe TaskStatus.WAITING
                 }
             }
 
@@ -120,8 +120,8 @@ class WorkflowTest :
                     val next = wf.completeTask(tasks.first.id)
                     next shouldHaveSize 1
                     next[0].task.name shouldBe "B"
-                    wf.findWorkflowTask(tasks.first.id).status shouldBe TaskStatus.SUCCEEDED
-                    wf.findWorkflowTask(tasks.second.id).status shouldBe TaskStatus.RUNNING
+                    wf.findNode(tasks.first.id).status shouldBe TaskStatus.SUCCEEDED
+                    wf.findNode(tasks.second.id).status shouldBe TaskStatus.RUNNING
                 }
             }
 
@@ -143,7 +143,7 @@ class WorkflowTest :
                     val next = wf.completeTask(tasks.first.id)
                     next shouldHaveSize 1
                     next[0].task.name shouldBe "B"
-                    wf.findWorkflowTask(tasks.third.id).status shouldBe TaskStatus.WAITING
+                    wf.findNode(tasks.third.id).status shouldBe TaskStatus.WAITING
                 }
             }
 
@@ -176,7 +176,7 @@ class WorkflowTest :
                     wf.start()
                     wf.completeTask(tasks.first.id)
                     wf.failTask(tasks.second.id)
-                    wf.findWorkflowTask(tasks.second.id).status shouldBe TaskStatus.FAILED
+                    wf.findNode(tasks.second.id).status shouldBe TaskStatus.FAILED
                     wf.status shouldBe WorkflowStatus.FAILED
                 }
             }
@@ -186,8 +186,8 @@ class WorkflowTest :
                     val (wf, tasks) = linearWorkflow()
                     wf.start()
                     wf.failTask(tasks.first.id)
-                    wf.findWorkflowTask(tasks.second.id).status shouldBe TaskStatus.FAILED
-                    wf.findWorkflowTask(tasks.third.id).status shouldBe TaskStatus.FAILED
+                    wf.findNode(tasks.second.id).status shouldBe TaskStatus.FAILED
+                    wf.findNode(tasks.third.id).status shouldBe TaskStatus.FAILED
                 }
             }
 
@@ -199,9 +199,9 @@ class WorkflowTest :
                     wf.completeTask(tasks.second.id)
                     // C is now RUNNING, A and B are SUCCEEDED
                     wf.failTask(tasks.third.id)
-                    wf.findWorkflowTask(tasks.first.id).status shouldBe TaskStatus.SUCCEEDED
-                    wf.findWorkflowTask(tasks.second.id).status shouldBe TaskStatus.SUCCEEDED
-                    wf.findWorkflowTask(tasks.third.id).status shouldBe TaskStatus.FAILED
+                    wf.findNode(tasks.first.id).status shouldBe TaskStatus.SUCCEEDED
+                    wf.findNode(tasks.second.id).status shouldBe TaskStatus.SUCCEEDED
+                    wf.findNode(tasks.third.id).status shouldBe TaskStatus.FAILED
                 }
             }
 
@@ -211,7 +211,7 @@ class WorkflowTest :
                     wf.start()
                     wf.failTask(tasks.first.id)
                     wf.failTask(tasks.first.id)
-                    wf.findWorkflowTask(tasks.first.id).status shouldBe TaskStatus.FAILED
+                    wf.findNode(tasks.first.id).status shouldBe TaskStatus.FAILED
                 }
             }
         }

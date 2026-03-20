@@ -1,0 +1,7 @@
+ALTER TABLE workflow_task RENAME TO workflow_node;
+ALTER TABLE workflow_task_edge RENAME TO workflow_edge;
+
+ALTER INDEX workflow_task_pkey RENAME TO workflow_node_pkey;
+ALTER INDEX workflow_task_edge_pkey RENAME TO workflow_edge_pkey;
+ALTER INDEX workflow_task_workflow_id_task_id_key RENAME TO workflow_node_workflow_id_task_id_key;
+ALTER INDEX workflow_task_edge_workflow_id_parent_task_id_child_task_id_key RENAME TO workflow_edge_workflow_id_parent_task_id_child_task_id_key;

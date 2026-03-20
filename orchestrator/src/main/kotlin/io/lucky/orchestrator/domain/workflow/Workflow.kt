@@ -25,30 +25,30 @@ class Workflow(
     @Column(nullable = false)
     var status: WorkflowStatus = WorkflowStatus.CREATED,
     @OneToMany(mappedBy = "workflow", cascade = [CascadeType.ALL], orphanRemoval = true)
-    val workflowTasks: MutableList<WorkflowTask> = mutableListOf(),
+    val nodes: MutableSet<WorkflowNode> = mutableSetOf(),
     @OneToMany(mappedBy = "workflow", cascade = [CascadeType.ALL], orphanRemoval = true)
-    val edges: MutableList<WorkflowTaskEdge> = mutableListOf(),
+    val edges: MutableSet<WorkflowEdge> = mutableSetOf(),
     @Version
     val version: Long = 0,
 ) : BaseEntity() {
     fun addTask(
         task: Task,
         expectedCount: Int,
-    ): WorkflowTask {
-        check(workflowTasks.none { it.task.id == task.id && task.id != 0L }) {
+    ): WorkflowNode {
+        check(nodes.none { it.task.id == task.id && task.id != 0L }) {
             "Task ${task.name} already exists in workflow"
         }
-        check(workflowTasks.none { it.task.name == task.name }) {
+        check(nodes.none { it.task.name == task.name }) {
             "Task ${task.name} already exists in workflow"
         }
-        val workflowTask =
-            WorkflowTask(
+        val node =
+            WorkflowNode(
                 workflow = this,
                 task = task,
                 expectedCount = expectedCount,
             )
-        workflowTasks.add(workflowTask)
-        return workflowTask
+        nodes.add(node)
+        return node
     }
 
     fun addEdge(
@@ -56,37 +56,42 @@ class Workflow(
         childTask: Task,
     ) {
         val edge =
-            WorkflowTaskEdge(
+            WorkflowEdge(
                 workflow = this,
                 parentTask = parentTask,
                 childTask = childTask,
             )
         edges.add(edge)
-        detectCycle()
+        try {
+            detectCycle()
+        } catch (e: IllegalStateException) {
+            edges.remove(edge)
+            throw e
+        }
     }
 
-    fun start(): List<WorkflowTask> {
+    fun start(): List<WorkflowNode> {
         status = status.transitTo(WorkflowStatus.RUNNING)
-        workflowTasks.forEach { it.markWaiting() }
-        val rootTasks = findRootTasks()
-        rootTasks.forEach { it.markRunning() }
-        return rootTasks
+        nodes.forEach { it.markWaiting() }
+        val rootNodes = findRootNodes()
+        rootNodes.forEach { it.markRunning() }
+        return rootNodes
     }
 
-    fun completeTask(taskId: Long): List<WorkflowTask> {
-        val wt = findWorkflowTask(taskId)
-        if (!wt.status.canTransitTo(TaskStatus.SUCCEEDED)) return emptyList()
-        wt.markSucceeded()
+    fun completeTask(taskId: Long): List<WorkflowNode> {
+        val node = findNode(taskId)
+        if (!node.status.canTransitTo(TaskStatus.SUCCEEDED)) return emptyList()
+        node.markSucceeded()
 
-        val newlyRunning = mutableListOf<WorkflowTask>()
-        findChildTasks(taskId).forEach { child ->
+        val newlyRunning = mutableListOf<WorkflowNode>()
+        findChildNodes(taskId).forEach { child ->
             if (child.status == TaskStatus.WAITING && allParentsSucceeded(child)) {
                 child.markRunning()
                 newlyRunning.add(child)
             }
         }
 
-        if (workflowTasks.all { it.status == TaskStatus.SUCCEEDED }) {
+        if (nodes.all { it.status == TaskStatus.SUCCEEDED }) {
             status = status.transitTo(WorkflowStatus.SUCCEEDED)
         }
 
@@ -94,9 +99,9 @@ class Workflow(
     }
 
     fun failTask(taskId: Long) {
-        val wt = findWorkflowTask(taskId)
-        if (wt.status == TaskStatus.FAILED) return
-        wt.markFailed()
+        val node = findNode(taskId)
+        if (node.status == TaskStatus.FAILED) return
+        node.markFailed()
 
         if (status.canTransitTo(WorkflowStatus.FAILED)) {
             status = status.transitTo(WorkflowStatus.FAILED)
@@ -106,33 +111,33 @@ class Workflow(
     }
 
     fun calculateProgress(): Double {
-        val totalExpected = workflowTasks.sumOf { it.expectedCount }
+        val totalExpected = nodes.sumOf { it.expectedCount }
         if (totalExpected == 0) return 0.0
-        val totalCompleted = workflowTasks.sumOf { it.completedCount }
+        val totalCompleted = nodes.sumOf { it.completedCount }
         return totalCompleted.toDouble() / totalExpected
     }
 
-    fun findWorkflowTask(taskId: Long): WorkflowTask = workflowTasks.first { it.task.id == taskId }
+    fun findNode(taskId: Long): WorkflowNode = nodes.first { it.task.id == taskId }
 
-    private fun findRootTasks(): List<WorkflowTask> {
+    private fun findRootNodes(): List<WorkflowNode> {
         val childTaskIds = edges.map { it.childTask.id }.toSet()
-        return workflowTasks.filter { it.task.id !in childTaskIds }
+        return nodes.filter { it.task.id !in childTaskIds }
     }
 
-    private fun findChildTasks(taskId: Long): List<WorkflowTask> {
+    private fun findChildNodes(taskId: Long): List<WorkflowNode> {
         val childIds = edges.filter { it.parentTask.id == taskId }.map { it.childTask.id }.toSet()
-        return workflowTasks.filter { it.task.id in childIds }
+        return nodes.filter { it.task.id in childIds }
     }
 
-    private fun allParentsSucceeded(wt: WorkflowTask): Boolean {
-        val parentIds = edges.filter { it.childTask.id == wt.task.id }.map { it.parentTask.id }
+    private fun allParentsSucceeded(node: WorkflowNode): Boolean {
+        val parentIds = edges.filter { it.childTask.id == node.task.id }.map { it.parentTask.id }
         return parentIds.all { parentId ->
-            workflowTasks.first { it.task.id == parentId }.status == TaskStatus.SUCCEEDED
+            nodes.first { it.task.id == parentId }.status == TaskStatus.SUCCEEDED
         }
     }
 
     private fun propagateFailure(taskId: Long) {
-        findChildTasks(taskId).forEach { child ->
+        findChildNodes(taskId).forEach { child ->
             if (child.status == TaskStatus.WAITING) {
                 child.markFailed()
                 propagateFailure(child.task.id)
@@ -160,10 +165,9 @@ class Workflow(
             return false
         }
 
-        val allNodeIds = workflowTasks.map { it.task.id }.toSet()
+        val allNodeIds = nodes.map { it.task.id }.toSet()
         allNodeIds.forEach { nodeId ->
             if (nodeId !in visited && dfs(nodeId)) {
-                edges.removeLast()
                 throw IllegalStateException("Cycle detected in workflow DAG")
             }
         }
