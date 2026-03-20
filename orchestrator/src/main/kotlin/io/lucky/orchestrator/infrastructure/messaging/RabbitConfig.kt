@@ -84,4 +84,15 @@ class RabbitConfig {
             setAcknowledgeMode(org.springframework.amqp.core.AcknowledgeMode.MANUAL)
             setMessageConverter(jsonMessageConverter())
         }
+
+    @Bean
+    fun failureContainerFactory(cf: ConnectionFactory): SimpleRabbitListenerContainerFactory =
+        SimpleRabbitListenerContainerFactory().apply {
+            setConnectionFactory(cf)
+            setConcurrentConsumers(3)
+            setMaxConcurrentConsumers(10)
+            setPrefetchCount(1)
+            setAcknowledgeMode(org.springframework.amqp.core.AcknowledgeMode.MANUAL)
+            setMessageConverter(jsonMessageConverter())
+        }
 }

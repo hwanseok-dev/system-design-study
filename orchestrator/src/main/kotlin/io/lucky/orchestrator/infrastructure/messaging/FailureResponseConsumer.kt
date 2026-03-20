@@ -1,0 +1,40 @@
+package io.lucky.orchestrator.infrastructure.messaging
+
+import com.rabbitmq.client.Channel
+import io.github.oshai.kotlinlogging.KotlinLogging
+import io.lucky.orchestrator.application.WorkflowService
+import io.lucky.orchestrator.domain.LogAction
+import org.springframework.amqp.rabbit.annotation.RabbitListener
+import org.springframework.amqp.support.AmqpHeaders
+import org.springframework.messaging.handler.annotation.Header
+import org.springframework.stereotype.Component
+
+private val logger = KotlinLogging.logger {}
+
+@Component
+class FailureResponseConsumer(
+    private val workflowService: WorkflowService,
+) {
+    @RabbitListener(
+        queues = [RabbitConfig.FAILURE_QUEUE],
+        containerFactory = "failureContainerFactory",
+    )
+    fun handle(
+        message: TaskResponseMessage,
+        channel: Channel,
+        @Header(AmqpHeaders.DELIVERY_TAG) tag: Long,
+    ) {
+        try {
+            workflowService.handleFailureResponse(message)
+            channel.basicAck(tag, false)
+            logger.info {
+                "action=${LogAction.HANDLE_FAILURE_RESPONSE} workflowId=${message.workflowId} taskId=${message.taskId} sequence=${message.sequence}"
+            }
+        } catch (e: Exception) {
+            logger.error(e) {
+                "action=${LogAction.HANDLE_FAILURE_RESPONSE_FAILED} workflowId=${message.workflowId} taskId=${message.taskId} sequence=${message.sequence}"
+            }
+            channel.basicNack(tag, false, false)
+        }
+    }
+}

@@ -117,6 +117,25 @@ class WorkflowService(
         }
     }
 
+    @Transactional
+    fun handleFailureResponse(msg: TaskResponseMessage) {
+        taskResponseRepository.save(
+            TaskResponse(
+                workflowId = msg.workflowId,
+                taskId = msg.taskId,
+                sequence = msg.sequence,
+                payload = msg.payload,
+                status = "FAILED",
+            ),
+        )
+
+        val workflow = getWorkflow(msg.workflowId)
+        workflow.failTask(msg.taskId)
+        logger.info {
+            "action=${LogAction.FAIL_TASK} workflowId=${msg.workflowId} taskId=${msg.taskId}"
+        }
+    }
+
     fun incrementAndCheckCompletion(
         workflowId: Long,
         taskId: Long,

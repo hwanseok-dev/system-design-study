@@ -12,7 +12,7 @@ enum class TaskStatus {
         get() =
             when (this) {
                 CREATED -> setOf(WAITING)
-                WAITING -> setOf(RUNNING, FAILED)
+                WAITING -> setOf(RUNNING)
                 RUNNING -> setOf(SUCCEEDED, FAILED)
                 SUCCEEDED -> emptySet()
                 FAILED -> emptySet()

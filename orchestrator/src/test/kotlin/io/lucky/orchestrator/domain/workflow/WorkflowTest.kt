@@ -182,12 +182,12 @@ class WorkflowTest :
             }
 
             context("downstream task 실패 전파") {
-                it("WAITING 상태의 downstream task도 FAILED가 된다") {
+                it("WAITING 상태의 downstream task는 WAITING을 유지한다") {
                     val (wf, tasks) = linearWorkflow()
                     wf.start()
                     wf.failTask(tasks.first.id)
-                    wf.findNode(tasks.second.id).status shouldBe TaskStatus.FAILED
-                    wf.findNode(tasks.third.id).status shouldBe TaskStatus.FAILED
+                    wf.findNode(tasks.second.id).status shouldBe TaskStatus.WAITING
+                    wf.findNode(tasks.third.id).status shouldBe TaskStatus.WAITING
                 }
             }
 

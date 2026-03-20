@@ -21,8 +21,8 @@ class TaskStatusTest :
                 it("RUNNING으로 전이 가능") {
                     TaskStatus.WAITING.canTransitTo(TaskStatus.RUNNING) shouldBe true
                 }
-                it("FAILED로 전이 가능 - parent 실패 전파") {
-                    TaskStatus.WAITING.canTransitTo(TaskStatus.FAILED) shouldBe true
+                it("FAILED로 전이 불가") {
+                    TaskStatus.WAITING.canTransitTo(TaskStatus.FAILED) shouldBe false
                 }
             }
 

@@ -70,11 +70,10 @@ class WorkflowNodeTest :
                 }
             }
 
-            context("WAITING 상태일 때 - parent 실패 전파") {
-                it("FAILED로 전이된다") {
+            context("WAITING 상태일 때") {
+                it("예외가 발생한다") {
                     val node = createNode(status = TaskStatus.WAITING)
-                    node.markFailed()
-                    node.status shouldBe TaskStatus.FAILED
+                    shouldThrow<IllegalStateException> { node.markFailed() }
                 }
             }
 

@@ -237,4 +237,79 @@ class WorkflowServiceIntegrationTest(
                 }
             }
         }
+
+        describe("handleFailureResponse") {
+            context("순차 DAG (A -> B) 에서 A가 실패할 때") {
+                it("task A와 workflow가 FAILED 상태가 되고 downstream B는 WAITING을 유지한다") {
+                    val a = taskRepository.save(Task(name = "A", queueName = "queue.a"))
+                    val b = taskRepository.save(Task(name = "B", queueName = "queue.b"))
+
+                    val workflow =
+                        workflowService.create(
+                            name = "test-workflow",
+                            nodes =
+                                listOf(
+                                    WorkflowNodeRequest(a.id),
+                                    WorkflowNodeRequest(b.id),
+                                ),
+                            edges =
+                                listOf(
+                                    WorkflowEdgeRequest(a.id, b.id),
+                                ),
+                        )
+                    workflowService.start(workflow.id)
+
+                    workflowService.handleFailureResponse(
+                        TaskResponseMessage(
+                            workflowId = workflow.id,
+                            taskId = a.id,
+                            sequence = 1,
+                            payload = """{"error":"timeout"}""",
+                        ),
+                    )
+
+                    val responses = taskResponseRepository.findAll()
+                    responses shouldHaveSize 1
+                    responses[0].status shouldBe "FAILED"
+
+                    val loaded = workflowService.findById(workflow.id)
+                    loaded.status shouldBe WorkflowStatus.FAILED
+                    loaded.findNode(a.id).status shouldBe TaskStatus.FAILED
+                    loaded.findNode(b.id).status shouldBe TaskStatus.WAITING
+                }
+            }
+
+            context("이미 실패한 task에 다시 실패 응답이 올 때") {
+                it("멱등하게 처리된다") {
+                    val a = taskRepository.save(Task(name = "A", queueName = "queue.a"))
+                    val b = taskRepository.save(Task(name = "B", queueName = "queue.b"))
+
+                    val workflow =
+                        workflowService.create(
+                            name = "test-workflow",
+                            nodes =
+                                listOf(
+                                    WorkflowNodeRequest(a.id),
+                                    WorkflowNodeRequest(b.id),
+                                ),
+                            edges =
+                                listOf(
+                                    WorkflowEdgeRequest(a.id, b.id),
+                                ),
+                        )
+                    workflowService.start(workflow.id)
+
+                    workflowService.handleFailureResponse(
+                        TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 1),
+                    )
+                    workflowService.handleFailureResponse(
+                        TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 2),
+                    )
+
+                    val loaded = workflowService.findById(workflow.id)
+                    loaded.status shouldBe WorkflowStatus.FAILED
+                    loaded.findNode(a.id).status shouldBe TaskStatus.FAILED
+                }
+            }
+        }
     })

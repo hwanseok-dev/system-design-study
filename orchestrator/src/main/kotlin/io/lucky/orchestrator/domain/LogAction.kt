@@ -8,4 +8,6 @@ object LogAction {
     const val PUBLISH_TASK_EXECUTION = "publishTaskExecution"
     const val HANDLE_SUCCESS_RESPONSE = "handleSuccessResponse"
     const val HANDLE_SUCCESS_RESPONSE_FAILED = "handleSuccessResponseFailed"
+    const val HANDLE_FAILURE_RESPONSE = "handleFailureResponse"
+    const val HANDLE_FAILURE_RESPONSE_FAILED = "handleFailureResponseFailed"
 }

@@ -138,7 +138,7 @@ class Workflow(
 
     private fun propagateFailure(taskId: Long) {
         findChildNodes(taskId).forEach { child ->
-            if (child.status == TaskStatus.WAITING) {
+            if (child.status == TaskStatus.RUNNING) {
                 child.markFailed()
                 propagateFailure(child.task.id)
             }
