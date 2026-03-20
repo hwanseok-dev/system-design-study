@@ -5,17 +5,16 @@ import io.lucky.orchestrator.api.WorkflowEdgeRequest
 import io.lucky.orchestrator.api.WorkflowNodeRequest
 import io.lucky.orchestrator.domain.EntityNotFoundException
 import io.lucky.orchestrator.domain.LogAction
-import io.lucky.orchestrator.domain.response.TaskResponse
 import io.lucky.orchestrator.domain.workflow.Workflow
 import io.lucky.orchestrator.domain.workflow.WorkflowNode
-import io.lucky.orchestrator.infrastructure.messaging.TaskResponseMessage
 import io.lucky.orchestrator.infrastructure.persistence.TaskRepository
-import io.lucky.orchestrator.infrastructure.persistence.TaskResponseRepository
 import io.lucky.orchestrator.infrastructure.persistence.WorkflowRepository
+import jakarta.persistence.OptimisticLockException
 import org.springframework.data.redis.core.StringRedisTemplate
+import org.springframework.retry.annotation.Backoff
+import org.springframework.retry.annotation.Retryable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.time.Duration
 
 private val logger = KotlinLogging.logger {}
 
@@ -23,7 +22,6 @@ private val logger = KotlinLogging.logger {}
 class WorkflowService(
     private val workflowRepository: WorkflowRepository,
     private val taskRepository: TaskRepository,
-    private val taskResponseRepository: TaskResponseRepository,
     private val taskExecutionService: TaskExecutionService,
     private val redisTemplate: StringRedisTemplate,
 ) {
@@ -70,48 +68,50 @@ class WorkflowService(
     @Transactional(readOnly = true)
     fun findById(workflowId: Long): Workflow = getWorkflow(workflowId)
 
-    fun handleSuccessResponse(msg: TaskResponseMessage) {
-        taskResponseRepository.save(
-            TaskResponse(
-                workflowId = msg.workflowId,
-                taskId = msg.taskId,
-                sequence = msg.sequence,
-                payload = msg.payload,
-            ),
-        )
-
-        val countKey = "{wf:${msg.workflowId}}:task:${msg.taskId}:count"
-        val count = redisTemplate.opsForValue().increment(countKey)!!
-        if (count == 1L) {
-            redisTemplate.expire(countKey, Duration.ofHours(24))
-        }
-
-        val expectedCount = getExpectedCount(msg.workflowId, msg.taskId)
-        if (count >= expectedCount.toLong()) {
-            taskExecutionService.completeTask(msg.workflowId, msg.taskId)
-        }
-    }
-
+    @Retryable(
+        value = [OptimisticLockException::class],
+        maxAttempts = 3,
+        backoff = Backoff(delay = 100),
+    )
     @Transactional
-    fun handleFailureResponse(msg: TaskResponseMessage) {
-        taskResponseRepository.save(
-            TaskResponse(
-                workflowId = msg.workflowId,
-                taskId = msg.taskId,
-                sequence = msg.sequence,
-                payload = msg.payload,
-                status = "FAILED",
-            ),
-        )
+    fun completeTask(
+        workflowId: Long,
+        taskId: Long,
+    ) {
+        val failKey = "{wf:$workflowId}:task:$taskId:failed"
+        if (redisTemplate.hasKey(failKey)) {
+            logger.info {
+                "action=${LogAction.SKIP_SUCCESS_ALREADY_FAILED} workflowId=$workflowId taskId=$taskId"
+            }
+            return
+        }
 
-        val workflow = getWorkflow(msg.workflowId)
-        workflow.failTask(msg.taskId)
+        val workflow = getWorkflow(workflowId)
+        val nextNodes = workflow.completeTask(taskId)
+        taskExecutionService.saveTaskExecutionRequests(workflowId, nextNodes)
         logger.info {
-            "action=${LogAction.FAIL_TASK} workflowId=${msg.workflowId} taskId=${msg.taskId}"
+            "action=${LogAction.COMPLETE_TASK} workflowId=$workflowId taskId=$taskId nextTasks=${nextNodes.size}"
         }
     }
 
-    private fun getExpectedCount(
+    @Retryable(
+        value = [OptimisticLockException::class],
+        maxAttempts = 3,
+        backoff = Backoff(delay = 100),
+    )
+    @Transactional
+    fun failTask(
+        workflowId: Long,
+        taskId: Long,
+    ) {
+        val workflow = getWorkflow(workflowId)
+        workflow.failTask(taskId)
+        logger.info {
+            "action=${LogAction.FAIL_TASK} workflowId=$workflowId taskId=$taskId"
+        }
+    }
+
+    fun getExpectedCount(
         workflowId: Long,
         taskId: Long,
     ): Int {

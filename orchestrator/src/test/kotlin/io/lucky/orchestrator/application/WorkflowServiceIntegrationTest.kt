@@ -22,7 +22,7 @@ import org.springframework.test.context.ActiveProfiles
 @ActiveProfiles("test")
 class WorkflowServiceIntegrationTest(
     private val workflowService: WorkflowService,
-    private val taskExecutionService: TaskExecutionService,
+    private val taskResponseHandler: TaskResponseHandler,
     private val taskRepository: TaskRepository,
     private val workflowRepository: WorkflowRepository,
     private val taskExecutionRequestRepository: TaskExecutionRequestRepository,
@@ -157,7 +157,7 @@ class WorkflowServiceIntegrationTest(
                         )
                     workflowService.start(workflow.id)
 
-                    workflowService.handleSuccessResponse(
+                    taskResponseHandler.handleSuccessResponse(
                         TaskResponseMessage(
                             workflowId = workflow.id,
                             taskId = a.id,
@@ -197,10 +197,10 @@ class WorkflowServiceIntegrationTest(
                         )
                     workflowService.start(workflow.id)
 
-                    workflowService.handleSuccessResponse(
+                    taskResponseHandler.handleSuccessResponse(
                         TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 1),
                     )
-                    workflowService.handleSuccessResponse(
+                    taskResponseHandler.handleSuccessResponse(
                         TaskResponseMessage(workflowId = workflow.id, taskId = b.id, sequence = 1),
                     )
 
@@ -234,7 +234,7 @@ class WorkflowServiceIntegrationTest(
                     // clear start requests
                     taskExecutionRequestRepository.deleteAll()
 
-                    workflowService.handleSuccessResponse(
+                    taskResponseHandler.handleSuccessResponse(
                         TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 1),
                     )
 
@@ -266,10 +266,10 @@ class WorkflowServiceIntegrationTest(
                         )
                     workflowService.start(workflow.id)
 
-                    taskExecutionService.completeTask(workflow.id, a.id)
+                    workflowService.completeTask(workflow.id, a.id)
 
                     shouldNotThrowAny {
-                        taskExecutionService.completeTask(workflow.id, a.id)
+                        workflowService.completeTask(workflow.id, a.id)
                     }
 
                     val loaded = workflowService.findById(workflow.id)
@@ -300,7 +300,7 @@ class WorkflowServiceIntegrationTest(
                         )
                     workflowService.start(workflow.id)
 
-                    workflowService.handleFailureResponse(
+                    taskResponseHandler.handleFailureResponse(
                         TaskResponseMessage(
                             workflowId = workflow.id,
                             taskId = a.id,
@@ -340,12 +340,49 @@ class WorkflowServiceIntegrationTest(
                         )
                     workflowService.start(workflow.id)
 
-                    workflowService.handleFailureResponse(
+                    taskResponseHandler.handleFailureResponse(
                         TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 1),
                     )
-                    workflowService.handleFailureResponse(
+                    taskResponseHandler.handleFailureResponse(
                         TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 2),
                     )
+
+                    val loaded = workflowService.findById(workflow.id)
+                    loaded.status shouldBe WorkflowStatus.FAILED
+                    loaded.findNode(a.id).status shouldBe TaskStatus.FAILED
+                }
+            }
+
+            context("실패 후 성공 응답이 올 때") {
+                it("성공 응답이 무시되고 task는 FAILED를 유지한다") {
+                    val a = taskRepository.save(Task(name = "A", queueName = "queue.a"))
+                    val b = taskRepository.save(Task(name = "B", queueName = "queue.b"))
+
+                    val workflow =
+                        workflowService.create(
+                            name = "test-workflow",
+                            nodes =
+                                listOf(
+                                    WorkflowNodeRequest(a.id),
+                                    WorkflowNodeRequest(b.id),
+                                ),
+                            edges =
+                                listOf(
+                                    WorkflowEdgeRequest(a.id, b.id),
+                                ),
+                        )
+                    workflowService.start(workflow.id)
+
+                    taskResponseHandler.handleFailureResponse(
+                        TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 1),
+                    )
+                    taskResponseHandler.handleSuccessResponse(
+                        TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 2),
+                    )
+
+                    val responses = taskResponseRepository.findAll()
+                    responses shouldHaveSize 1
+                    responses[0].status shouldBe "FAILED"
 
                     val loaded = workflowService.findById(workflow.id)
                     loaded.status shouldBe WorkflowStatus.FAILED

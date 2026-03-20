@@ -2,7 +2,7 @@ package io.lucky.orchestrator.infrastructure.messaging
 
 import com.rabbitmq.client.Channel
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.lucky.orchestrator.application.WorkflowService
+import io.lucky.orchestrator.application.TaskResponseHandler
 import io.lucky.orchestrator.domain.LogAction
 import org.springframework.amqp.rabbit.annotation.RabbitListener
 import org.springframework.amqp.support.AmqpHeaders
@@ -13,7 +13,7 @@ private val logger = KotlinLogging.logger {}
 
 @Component
 class FailureResponseConsumer(
-    private val workflowService: WorkflowService,
+    private val taskResponseHandler: TaskResponseHandler,
 ) {
     @RabbitListener(
         queues = [RabbitConfig.FAILURE_QUEUE],
@@ -25,7 +25,7 @@ class FailureResponseConsumer(
         @Header(AmqpHeaders.DELIVERY_TAG) tag: Long,
     ) {
         try {
-            workflowService.handleFailureResponse(message)
+            taskResponseHandler.handleFailureResponse(message)
             channel.basicAck(tag, false)
             logger.info {
                 "action=${LogAction.HANDLE_FAILURE_RESPONSE} workflowId=${message.workflowId} taskId=${message.taskId} sequence=${message.sequence}"
