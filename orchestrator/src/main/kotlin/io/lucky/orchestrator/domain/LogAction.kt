@@ -12,4 +12,5 @@ object LogAction {
     const val HANDLE_FAILURE_RESPONSE_FAILED = "handleFailureResponseFailed"
     const val SKIP_SUCCESS_ALREADY_FAILED = "skipSuccessAlreadyFailed"
     const val SKIP_FAILURE_ALREADY_FAILED = "skipFailureAlreadyFailed"
+    const val SKIP_DUPLICATE_MESSAGE = "skipDuplicateMessage"
 }

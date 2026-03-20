@@ -9,12 +9,13 @@ import org.springframework.data.redis.core.script.DefaultRedisScript
 class RedisScriptConfig {
     companion object {
         const val FAIL_KEY_TTL_SECONDS = 86400L
+        const val DEDUP_TTL_SECONDS = 86400L
     }
 
     @Bean
-    fun checkAndIncrementScript(): DefaultRedisScript<Long> =
+    fun checkDedupAndIncrementScript(): DefaultRedisScript<Long> =
         DefaultRedisScript<Long>().apply {
-            setLocation(ClassPathResource("scripts/check_and_increment.lua"))
+            setLocation(ClassPathResource("scripts/check_dedup_and_increment.lua"))
             resultType = Long::class.java
         }
 

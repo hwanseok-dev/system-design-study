@@ -245,6 +245,47 @@ class WorkflowServiceIntegrationTest(
             }
         }
 
+        describe("dedup") {
+            context("같은 성공 메시지가 2번 전달될 때") {
+                it("count는 1만 증가하고 task_response도 1건만 저장된다") {
+                    val a = taskRepository.save(Task(name = "A", queueName = "queue.a", expectedCount = 2))
+                    val b = taskRepository.save(Task(name = "B", queueName = "queue.b"))
+
+                    val workflow =
+                        workflowService.create(
+                            name = "test-workflow",
+                            nodes =
+                                listOf(
+                                    WorkflowNodeRequest(a.id),
+                                    WorkflowNodeRequest(b.id),
+                                ),
+                            edges =
+                                listOf(
+                                    WorkflowEdgeRequest(a.id, b.id),
+                                ),
+                        )
+                    workflowService.start(workflow.id)
+
+                    val msg =
+                        TaskResponseMessage(
+                            workflowId = workflow.id,
+                            taskId = a.id,
+                            sequence = 1,
+                            payload = """{"result":"ok"}""",
+                        )
+
+                    taskResponseHandler.handleSuccessResponse(msg)
+                    taskResponseHandler.handleSuccessResponse(msg)
+
+                    val responses = taskResponseRepository.findAll()
+                    responses shouldHaveSize 1
+
+                    val loaded = workflowService.findById(workflow.id)
+                    loaded.findNode(a.id).status shouldBe TaskStatus.RUNNING
+                }
+            }
+        }
+
         describe("completeTask") {
             context("이미 SUCCEEDED인 task에 다시 completeTask를 호출할 때") {
                 it("멱등하게 동작하고 예외가 발생하지 않는다") {
