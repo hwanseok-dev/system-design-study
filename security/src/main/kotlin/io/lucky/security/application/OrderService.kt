@@ -1,11 +1,15 @@
 package io.lucky.security.application
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.lucky.security.domain.EntityNotFoundException
 import io.lucky.security.domain.LogAction
 import io.lucky.security.domain.order.Order
 import io.lucky.security.domain.order.OrderSide
 import io.lucky.security.domain.order.OrderType
+import io.lucky.security.infrastructure.messaging.RabbitConfig
+import io.lucky.security.infrastructure.outbox.OutboxMessage
+import io.lucky.security.infrastructure.outbox.OutboxRepository
 import io.lucky.security.infrastructure.persistence.OrderRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -17,6 +21,8 @@ private val logger = KotlinLogging.logger {}
 class OrderService(
     private val orderRepository: OrderRepository,
     private val balanceService: BalanceService,
+    private val outboxRepository: OutboxRepository,
+    private val objectMapper: ObjectMapper,
 ) {
     @Transactional
     fun create(
@@ -55,7 +61,27 @@ class OrderService(
                 "stockCode=$stockCode side=$side quantity=$quantity price=$price"
         }
 
-        // TODO: EXEC-006 - save outbox message for order validation
+        outboxRepository.save(
+            OutboxMessage(
+                aggregateType = "ORDER",
+                aggregateId = order.id,
+                eventType = "ORDER_VALIDATE",
+                exchange = RabbitConfig.ORDER_EXCHANGE,
+                routingKey = "order.validate",
+                payload =
+                    objectMapper.writeValueAsString(
+                        OrderValidatePayload(
+                            orderId = order.id,
+                            userId = order.userId,
+                            stockCode = order.stockCode,
+                            side = order.side.name,
+                            quantity = order.quantity,
+                            price = order.price,
+                        ),
+                    ),
+            ),
+        )
+
         return order
     }
 

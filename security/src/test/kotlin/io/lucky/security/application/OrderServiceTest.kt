@@ -5,11 +5,14 @@ import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.comparables.shouldBeEqualComparingTo
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
 import io.lucky.security.domain.balance.Balance
 import io.lucky.security.domain.balance.StockHolding
 import io.lucky.security.domain.order.OrderSide
 import io.lucky.security.domain.order.OrderStatus
 import io.lucky.security.domain.order.OrderType
+import io.lucky.security.infrastructure.messaging.RabbitConfig
+import io.lucky.security.infrastructure.outbox.OutboxRepository
 import io.lucky.security.infrastructure.persistence.BalanceJournalRepository
 import io.lucky.security.infrastructure.persistence.BalanceRepository
 import io.lucky.security.infrastructure.persistence.OrderRepository
@@ -28,9 +31,11 @@ class OrderServiceTest(
     private val stockHoldingRepository: StockHoldingRepository,
     private val orderRepository: OrderRepository,
     private val journalRepository: BalanceJournalRepository,
+    private val outboxRepository: OutboxRepository,
 ) : DescribeSpec({
 
         beforeEach {
+            outboxRepository.deleteAll()
             journalRepository.deleteAll()
             orderRepository.deleteAll()
             stockHoldingRepository.deleteAll()
@@ -65,6 +70,16 @@ class OrderServiceTest(
                     journals.size shouldBe 1
                     journals[0].journalType.name shouldBe "ORDER_LOCK"
                     journals[0].cashDelta shouldBeEqualComparingTo BigDecimal("-500000")
+
+                    val outbox = outboxRepository.findAll()
+                    outbox.size shouldBe 1
+                    outbox[0].aggregateType shouldBe "ORDER"
+                    outbox[0].aggregateId shouldBe order.id
+                    outbox[0].eventType shouldBe "ORDER_VALIDATE"
+                    outbox[0].exchange shouldBe RabbitConfig.ORDER_EXCHANGE
+                    outbox[0].routingKey shouldBe "order.validate"
+                    outbox[0].published shouldBe false
+                    outbox[0].payload shouldContain order.id.toString()
                 }
             }
 
@@ -101,6 +116,13 @@ class OrderServiceTest(
                     journals.size shouldBe 1
                     journals[0].journalType.name shouldBe "STOCK_LOCK"
                     journals[0].quantityDelta shouldBe -30
+
+                    val outbox = outboxRepository.findAll()
+                    outbox.size shouldBe 1
+                    outbox[0].aggregateType shouldBe "ORDER"
+                    outbox[0].aggregateId shouldBe order.id
+                    outbox[0].eventType shouldBe "ORDER_VALIDATE"
+                    outbox[0].published shouldBe false
                 }
             }
 
@@ -123,6 +145,8 @@ class OrderServiceTest(
                     val balance = balanceRepository.findByUserId(3L)!!
                     balance.cashAmount shouldBeEqualComparingTo BigDecimal("100000")
                     balance.lockedAmount shouldBeEqualComparingTo BigDecimal.ZERO
+
+                    outboxRepository.findAll().size shouldBe 0
                 }
             }
         }
