@@ -1,0 +1,2 @@
+CREATE DATABASE orchestrator;
+GRANT ALL PRIVILEGES ON DATABASE orchestrator TO study;
