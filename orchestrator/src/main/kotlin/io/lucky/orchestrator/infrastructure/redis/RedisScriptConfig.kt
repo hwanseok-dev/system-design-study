@@ -20,6 +20,13 @@ class RedisScriptConfig {
         }
 
     @Bean
+    fun checkFailAndIncrementScript(): DefaultRedisScript<Long> =
+        DefaultRedisScript<Long>().apply {
+            setLocation(ClassPathResource("scripts/check_fail_and_increment.lua"))
+            resultType = Long::class.java
+        }
+
+    @Bean
     fun checkAndFailScript(): DefaultRedisScript<Long> =
         DefaultRedisScript<Long>().apply {
             setLocation(ClassPathResource("scripts/check_and_fail.lua"))

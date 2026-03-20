@@ -81,7 +81,9 @@ class RabbitConfig {
             setConnectionFactory(cf)
             setConcurrentConsumers(10)
             setMaxConcurrentConsumers(50)
-            setPrefetchCount(10)
+            setPrefetchCount(50)
+            setConsumerBatchEnabled(true)
+            setBatchSize(100)
             setAcknowledgeMode(org.springframework.amqp.core.AcknowledgeMode.MANUAL)
             setMessageConverter(jsonMessageConverter())
         }

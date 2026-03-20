@@ -245,6 +245,83 @@ class WorkflowServiceIntegrationTest(
             }
         }
 
+        describe("handleSuccessBatch") {
+            context("같은 (workflowId, taskId) 그룹의 batch를 처리할 때") {
+                it("batch 크기만큼 count가 증가하고 task_response가 저장된다") {
+                    val a = taskRepository.save(Task(name = "A", queueName = "queue.a", expectedCount = 3))
+                    val b = taskRepository.save(Task(name = "B", queueName = "queue.b"))
+
+                    val workflow =
+                        workflowService.create(
+                            name = "test-workflow",
+                            nodes =
+                                listOf(
+                                    WorkflowNodeRequest(a.id),
+                                    WorkflowNodeRequest(b.id),
+                                ),
+                            edges =
+                                listOf(
+                                    WorkflowEdgeRequest(a.id, b.id),
+                                ),
+                        )
+                    workflowService.start(workflow.id)
+
+                    val messages =
+                        listOf(
+                            TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 1),
+                            TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 2),
+                            TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 3),
+                        )
+
+                    taskResponseHandler.handleSuccessBatch(workflow.id, a.id, messages)
+
+                    val responses = taskResponseRepository.findAll()
+                    responses shouldHaveSize 3
+
+                    val loaded = workflowService.findById(workflow.id)
+                    loaded.findNode(a.id).status shouldBe TaskStatus.SUCCEEDED
+                    loaded.findNode(b.id).status shouldBe TaskStatus.RUNNING
+                }
+            }
+
+            context("batch 내에 중복 sequence가 있을 때") {
+                it("중복은 무시되고 유효한 건수만 count에 반영된다") {
+                    val a = taskRepository.save(Task(name = "A", queueName = "queue.a", expectedCount = 2))
+                    val b = taskRepository.save(Task(name = "B", queueName = "queue.b"))
+
+                    val workflow =
+                        workflowService.create(
+                            name = "test-workflow",
+                            nodes =
+                                listOf(
+                                    WorkflowNodeRequest(a.id),
+                                    WorkflowNodeRequest(b.id),
+                                ),
+                            edges =
+                                listOf(
+                                    WorkflowEdgeRequest(a.id, b.id),
+                                ),
+                        )
+                    workflowService.start(workflow.id)
+
+                    val messages =
+                        listOf(
+                            TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 1),
+                            TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 1),
+                            TaskResponseMessage(workflowId = workflow.id, taskId = a.id, sequence = 2),
+                        )
+
+                    taskResponseHandler.handleSuccessBatch(workflow.id, a.id, messages)
+
+                    val responses = taskResponseRepository.findAll()
+                    responses shouldHaveSize 2
+
+                    val loaded = workflowService.findById(workflow.id)
+                    loaded.findNode(a.id).status shouldBe TaskStatus.SUCCEEDED
+                }
+            }
+        }
+
         describe("dedup") {
             context("같은 성공 메시지가 2번 전달될 때") {
                 it("count는 1만 증가하고 task_response도 1건만 저장된다") {
