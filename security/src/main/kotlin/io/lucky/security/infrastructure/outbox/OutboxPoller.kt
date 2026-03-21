@@ -1,6 +1,7 @@
 package io.lucky.security.infrastructure.outbox
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.lucky.security.application.OrderService
 import io.lucky.security.domain.LogAction
 import org.springframework.amqp.rabbit.core.RabbitTemplate
 import org.springframework.scheduling.annotation.Scheduled
@@ -13,6 +14,7 @@ private val logger = KotlinLogging.logger {}
 class OutboxPoller(
     private val outboxRepository: OutboxRepository,
     private val rabbitTemplate: RabbitTemplate,
+    private val orderService: OrderService,
 ) {
     @Scheduled(fixedDelay = 1000)
     @Transactional
@@ -23,6 +25,14 @@ class OutboxPoller(
         messages.forEach { message ->
             rabbitTemplate.convertAndSend(message.exchange, message.routingKey, message.payload)
             message.published = true
+
+            when (message.eventType) {
+                OutboxEventType.ORDER_EXECUTE -> orderService.submitOrder(message.aggregateId)
+                OutboxEventType.ORDER_VALIDATE,
+                OutboxEventType.EXECUTION_SETTLED,
+                -> Unit
+            }
+
             logger.info {
                 "action=${LogAction.PUBLISH_OUTBOX} aggregateType=${message.aggregateType} " +
                     "aggregateId=${message.aggregateId} eventType=${message.eventType}"

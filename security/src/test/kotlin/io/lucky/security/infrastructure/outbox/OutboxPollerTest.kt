@@ -2,6 +2,8 @@ package io.lucky.security.infrastructure.outbox
 
 import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.shouldBe
+import io.lucky.security.application.OrderService
+import io.lucky.security.infrastructure.messaging.RabbitConfig
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -15,10 +17,11 @@ class OutboxPollerTest :
 
         val outboxRepository = mock<OutboxRepository>()
         val rabbitTemplate = mock<RabbitTemplate>()
-        val poller = OutboxPoller(outboxRepository, rabbitTemplate)
+        val orderService = mock<OrderService>()
+        val poller = OutboxPoller(outboxRepository, rabbitTemplate, orderService)
 
         beforeEach {
-            reset(outboxRepository, rabbitTemplate)
+            reset(outboxRepository, rabbitTemplate, orderService)
         }
 
         describe("poll") {
@@ -27,18 +30,22 @@ class OutboxPollerTest :
                     val message =
                         OutboxMessage(
                             id = 1L,
-                            aggregateType = "ORDER",
+                            aggregateType = AggregateType.ORDER,
                             aggregateId = 100L,
-                            eventType = "ORDER_VALIDATE",
-                            exchange = "order.exchange",
-                            routingKey = "order.validate",
+                            eventType = OutboxEventType.ORDER_VALIDATE,
+                            exchange = RabbitConfig.ORDER_EXCHANGE,
+                            routingKey = RabbitConfig.RK_ORDER_VALIDATE,
                             payload = """{"orderId":100}""",
                         )
                     whenever(outboxRepository.findUnpublished(50)).thenReturn(listOf(message))
 
                     poller.poll()
 
-                    verify(rabbitTemplate).convertAndSend("order.exchange", "order.validate", """{"orderId":100}""")
+                    verify(rabbitTemplate).convertAndSend(
+                        RabbitConfig.ORDER_EXCHANGE,
+                        RabbitConfig.RK_ORDER_VALIDATE,
+                        """{"orderId":100}""",
+                    )
                     message.published shouldBe true
                 }
             }
@@ -48,31 +55,85 @@ class OutboxPollerTest :
                     val msg1 =
                         OutboxMessage(
                             id = 1L,
-                            aggregateType = "ORDER",
+                            aggregateType = AggregateType.ORDER,
                             aggregateId = 100L,
-                            eventType = "ORDER_VALIDATE",
-                            exchange = "order.exchange",
-                            routingKey = "order.validate",
+                            eventType = OutboxEventType.ORDER_VALIDATE,
+                            exchange = RabbitConfig.ORDER_EXCHANGE,
+                            routingKey = RabbitConfig.RK_ORDER_VALIDATE,
                             payload = """{"orderId":100}""",
                         )
                     val msg2 =
                         OutboxMessage(
                             id = 2L,
-                            aggregateType = "EXECUTION",
+                            aggregateType = AggregateType.EXECUTION,
                             aggregateId = 200L,
-                            eventType = "EXECUTION_SETTLED",
-                            exchange = "execution.exchange",
-                            routingKey = "execution.settled",
+                            eventType = OutboxEventType.EXECUTION_SETTLED,
+                            exchange = RabbitConfig.EXECUTION_EXCHANGE,
+                            routingKey = RabbitConfig.RK_EXECUTION_SETTLED,
                             payload = """{"executionId":200}""",
                         )
                     whenever(outboxRepository.findUnpublished(50)).thenReturn(listOf(msg1, msg2))
 
                     poller.poll()
 
-                    verify(rabbitTemplate).convertAndSend("order.exchange", "order.validate", """{"orderId":100}""")
-                    verify(rabbitTemplate).convertAndSend("execution.exchange", "execution.settled", """{"executionId":200}""")
+                    verify(rabbitTemplate).convertAndSend(
+                        RabbitConfig.ORDER_EXCHANGE,
+                        RabbitConfig.RK_ORDER_VALIDATE,
+                        """{"orderId":100}""",
+                    )
+                    verify(rabbitTemplate).convertAndSend(
+                        RabbitConfig.EXECUTION_EXCHANGE,
+                        RabbitConfig.RK_EXECUTION_SETTLED,
+                        """{"executionId":200}""",
+                    )
                     msg1.published shouldBe true
                     msg2.published shouldBe true
+                }
+            }
+
+            context("ORDER_EXECUTE 이벤트를 발행할 때") {
+                it("발행 후 주문을 SUBMITTED로 전이한다") {
+                    val message =
+                        OutboxMessage(
+                            id = 3L,
+                            aggregateType = AggregateType.ORDER,
+                            aggregateId = 100L,
+                            eventType = OutboxEventType.ORDER_EXECUTE,
+                            exchange = RabbitConfig.ORDER_EXCHANGE,
+                            routingKey = RabbitConfig.RK_ORDER_EXECUTE,
+                            payload = """{"orderId":100}""",
+                        )
+                    whenever(outboxRepository.findUnpublished(50)).thenReturn(listOf(message))
+
+                    poller.poll()
+
+                    verify(rabbitTemplate).convertAndSend(
+                        RabbitConfig.ORDER_EXCHANGE,
+                        RabbitConfig.RK_ORDER_EXECUTE,
+                        """{"orderId":100}""",
+                    )
+                    verify(orderService).submitOrder(100L)
+                    message.published shouldBe true
+                }
+            }
+
+            context("ORDER_VALIDATE 이벤트를 발행할 때") {
+                it("submitOrder를 호출하지 않는다") {
+                    val message =
+                        OutboxMessage(
+                            id = 1L,
+                            aggregateType = AggregateType.ORDER,
+                            aggregateId = 100L,
+                            eventType = OutboxEventType.ORDER_VALIDATE,
+                            exchange = RabbitConfig.ORDER_EXCHANGE,
+                            routingKey = RabbitConfig.RK_ORDER_VALIDATE,
+                            payload = """{"orderId":100}""",
+                        )
+                    whenever(outboxRepository.findUnpublished(50)).thenReturn(listOf(message))
+
+                    poller.poll()
+
+                    verify(orderService, never()).submitOrder(any())
                 }
             }
 

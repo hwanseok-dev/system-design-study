@@ -2,6 +2,8 @@ package io.lucky.security.infrastructure.outbox
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -15,12 +17,14 @@ import java.time.Instant
 class OutboxMessage(
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long = 0,
+    @Enumerated(EnumType.STRING)
     @Column(name = "aggregate_type", nullable = false)
-    val aggregateType: String,
+    val aggregateType: AggregateType,
     @Column(name = "aggregate_id", nullable = false)
     val aggregateId: Long,
+    @Enumerated(EnumType.STRING)
     @Column(name = "event_type", nullable = false)
-    val eventType: String,
+    val eventType: OutboxEventType,
     @Column(nullable = false)
     val exchange: String,
     @Column(name = "routing_key", nullable = false)

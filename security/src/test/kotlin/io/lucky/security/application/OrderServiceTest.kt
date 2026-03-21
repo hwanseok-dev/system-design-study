@@ -12,6 +12,8 @@ import io.lucky.security.domain.order.OrderSide
 import io.lucky.security.domain.order.OrderStatus
 import io.lucky.security.domain.order.OrderType
 import io.lucky.security.infrastructure.messaging.RabbitConfig
+import io.lucky.security.infrastructure.outbox.AggregateType
+import io.lucky.security.infrastructure.outbox.OutboxEventType
 import io.lucky.security.infrastructure.outbox.OutboxRepository
 import io.lucky.security.infrastructure.persistence.BalanceJournalRepository
 import io.lucky.security.infrastructure.persistence.BalanceRepository
@@ -73,11 +75,11 @@ class OrderServiceTest(
 
                     val outbox = outboxRepository.findAll()
                     outbox.size shouldBe 1
-                    outbox[0].aggregateType shouldBe "ORDER"
+                    outbox[0].aggregateType shouldBe AggregateType.ORDER
                     outbox[0].aggregateId shouldBe order.id
-                    outbox[0].eventType shouldBe "ORDER_VALIDATE"
+                    outbox[0].eventType shouldBe OutboxEventType.ORDER_VALIDATE
                     outbox[0].exchange shouldBe RabbitConfig.ORDER_EXCHANGE
-                    outbox[0].routingKey shouldBe "order.validate"
+                    outbox[0].routingKey shouldBe RabbitConfig.RK_ORDER_VALIDATE
                     outbox[0].published shouldBe false
                     outbox[0].payload shouldContain order.id.toString()
                 }
@@ -119,9 +121,9 @@ class OrderServiceTest(
 
                     val outbox = outboxRepository.findAll()
                     outbox.size shouldBe 1
-                    outbox[0].aggregateType shouldBe "ORDER"
+                    outbox[0].aggregateType shouldBe AggregateType.ORDER
                     outbox[0].aggregateId shouldBe order.id
-                    outbox[0].eventType shouldBe "ORDER_VALIDATE"
+                    outbox[0].eventType shouldBe OutboxEventType.ORDER_VALIDATE
                     outbox[0].published shouldBe false
                 }
             }
