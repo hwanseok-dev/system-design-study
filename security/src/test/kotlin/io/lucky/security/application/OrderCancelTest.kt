@@ -19,6 +19,7 @@ import io.lucky.security.infrastructure.persistence.OrderRepository
 import io.lucky.security.infrastructure.persistence.SettlementRepository
 import io.lucky.security.infrastructure.persistence.StockHoldingRepository
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -38,6 +39,7 @@ class OrderCancelTest(
     private val settlementRepository: SettlementRepository,
     private val journalRepository: BalanceJournalRepository,
     private val outboxRepository: OutboxRepository,
+    private val redisTemplate: StringRedisTemplate,
 ) : DescribeSpec({
 
         beforeEach {
@@ -48,6 +50,10 @@ class OrderCancelTest(
             orderRepository.deleteAll()
             stockHoldingRepository.deleteAll()
             balanceRepository.deleteAll()
+            redisTemplate.connectionFactory
+                ?.connection
+                ?.serverCommands()
+                ?.flushDb()
         }
 
         describe("requestCancel") {

@@ -12,8 +12,9 @@ class ExecutionContainerFactoryConfig {
     fun executionContainerFactory(connectionFactory: ConnectionFactory): SimpleRabbitListenerContainerFactory =
         SimpleRabbitListenerContainerFactory().apply {
             setConnectionFactory(connectionFactory)
-            setConcurrentConsumers(1)
-            setPrefetchCount(1)
+            setConcurrentConsumers(10)
+            setMaxConcurrentConsumers(50)
+            setPrefetchCount(10)
             setAcknowledgeMode(AcknowledgeMode.MANUAL)
         }
 }

@@ -21,6 +21,7 @@ import io.lucky.security.infrastructure.persistence.OrderRepository
 import io.lucky.security.infrastructure.persistence.SettlementRepository
 import io.lucky.security.infrastructure.persistence.StockHoldingRepository
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -40,6 +41,7 @@ class ExecutionServiceTest(
     private val settlementRepository: SettlementRepository,
     private val journalRepository: BalanceJournalRepository,
     private val outboxRepository: OutboxRepository,
+    private val redisTemplate: StringRedisTemplate,
 ) : DescribeSpec({
 
         beforeEach {
@@ -50,6 +52,10 @@ class ExecutionServiceTest(
             orderRepository.deleteAll()
             stockHoldingRepository.deleteAll()
             balanceRepository.deleteAll()
+            redisTemplate.connectionFactory
+                ?.connection
+                ?.serverCommands()
+                ?.flushDb()
         }
 
         describe("applyExecution") {
@@ -281,6 +287,58 @@ class ExecutionServiceTest(
 
                     val settlements = settlementRepository.findAll()
                     settlements.size shouldBe 2
+                }
+            }
+
+            context("Redis INCRBY로 체결 수량을 추적하는 경우") {
+                it("Redis에 총 체결 수량이 정확히 저장된다") {
+                    balanceRepository.save(Balance(userId = 1L, cashAmount = BigDecimal("1000000")))
+                    val order =
+                        orderService.create(
+                            userId = 1L,
+                            stockCode = "005930",
+                            orderType = OrderType.LIMIT,
+                            side = OrderSide.BUY,
+                            quantity = 10,
+                            price = BigDecimal("50000"),
+                        )
+                    orderService.onValidated(order.id)
+                    orderService.submitOrder(order.id)
+
+                    executionService.applyExecution(
+                        ExecutionResultPayload(
+                            orderId = order.id,
+                            userId = 1L,
+                            stockCode = "005930",
+                            side = "BUY",
+                            quantity = 4,
+                            price = BigDecimal("50000"),
+                            exchangeExecId = UUID.randomUUID().toString(),
+                            executedAt = Instant.now(),
+                        ),
+                    )
+
+                    val filledKey = "{order:${order.id}}:filled_qty"
+                    redisTemplate.opsForValue().get(filledKey) shouldBe "4"
+
+                    executionService.applyExecution(
+                        ExecutionResultPayload(
+                            orderId = order.id,
+                            userId = 1L,
+                            stockCode = "005930",
+                            side = "BUY",
+                            quantity = 6,
+                            price = BigDecimal("50000"),
+                            exchangeExecId = UUID.randomUUID().toString(),
+                            executedAt = Instant.now(),
+                        ),
+                    )
+
+                    redisTemplate.opsForValue().get(filledKey) shouldBe "10"
+
+                    val filledOutbox =
+                        outboxRepository.findAll().filter { it.eventType == OutboxEventType.ORDER_FILLED }
+                    filledOutbox.size shouldBe 1
                 }
             }
         }
