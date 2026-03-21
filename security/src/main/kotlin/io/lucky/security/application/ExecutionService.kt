@@ -6,7 +6,6 @@ import io.lucky.security.domain.EntityNotFoundException
 import io.lucky.security.domain.LogAction
 import io.lucky.security.domain.execution.Execution
 import io.lucky.security.domain.order.OrderSide
-import io.lucky.security.domain.order.OrderStatus
 import io.lucky.security.domain.settlement.Settlement
 import io.lucky.security.infrastructure.messaging.RabbitConfig
 import io.lucky.security.infrastructure.outbox.AggregateType
@@ -16,8 +15,13 @@ import io.lucky.security.infrastructure.outbox.OutboxRepository
 import io.lucky.security.infrastructure.persistence.ExecutionRepository
 import io.lucky.security.infrastructure.persistence.OrderRepository
 import io.lucky.security.infrastructure.persistence.SettlementRepository
+import jakarta.persistence.OptimisticLockException
+import org.springframework.data.redis.core.StringRedisTemplate
+import org.springframework.retry.annotation.Backoff
+import org.springframework.retry.annotation.Retryable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Duration
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
@@ -31,7 +35,17 @@ class ExecutionService(
     private val outboxRepository: OutboxRepository,
     private val settlementRepository: SettlementRepository,
     private val objectMapper: ObjectMapper,
+    private val redisTemplate: StringRedisTemplate,
 ) {
+    companion object {
+        private val FILLED_QTY_TTL = Duration.ofHours(24)
+    }
+
+    @Retryable(
+        value = [OptimisticLockException::class],
+        maxAttempts = 3,
+        backoff = Backoff(delay = 100),
+    )
     @Transactional
     fun applyExecution(payload: ExecutionResultPayload) {
         val side = OrderSide.valueOf(payload.side)
@@ -42,7 +56,11 @@ class ExecutionService(
                 .atZone(ZoneId.of("Asia/Seoul"))
                 .toLocalDate()
 
-        // 1. Save execution
+        // 1. Redis atomic increment
+        val filledKey = "{order:${payload.orderId}}:filled_qty"
+        val totalFilled = redisTemplate.opsForValue().increment(filledKey, payload.quantity.toLong())!!
+
+        // 2. Save execution
         val execution =
             executionRepository.save(
                 Execution(
@@ -60,14 +78,14 @@ class ExecutionService(
             )
         execution.apply()
 
-        // 2. Update order status
+        // 3. Update order status
         val order =
             orderRepository.findById(payload.orderId).orElseThrow {
                 EntityNotFoundException("Order", payload.orderId)
             }
         val newStatus = order.applyExecution(payload.quantity, payload.price)
 
-        // 3. Update balance
+        // 4. Update balance
         when (side) {
             OrderSide.BUY -> {
                 balanceService.confirmBuyExecution(order.userId, execution.id, order.stockCode, amount)
@@ -80,8 +98,8 @@ class ExecutionService(
             }
         }
 
-        // 4. Publish ORDER_FILLED outbox if fully filled
-        if (newStatus == OrderStatus.FILLED) {
+        // 5. Redis return value determines FILLED — exactly one consumer enters
+        if (totalFilled >= order.quantity.toLong()) {
             outboxRepository.save(
                 OutboxMessage(
                     aggregateType = AggregateType.ORDER,
@@ -102,9 +120,13 @@ class ExecutionService(
                         ),
                 ),
             )
+
+            if (totalFilled == order.quantity.toLong()) {
+                redisTemplate.expire(filledKey, FILLED_QTY_TTL)
+            }
         }
 
-        // 5. Create settlement record
+        // 6. Create settlement record
         settlementRepository.save(
             Settlement(
                 executionId = execution.id,
@@ -121,7 +143,7 @@ class ExecutionService(
         logger.info {
             "action=${LogAction.APPLY_EXECUTION} executionId=${execution.id} orderId=${payload.orderId} " +
                 "userId=${payload.userId} side=$side quantity=${payload.quantity} price=${payload.price} " +
-                "orderStatus=$newStatus"
+                "totalFilled=$totalFilled orderQuantity=${order.quantity}"
         }
     }
 }
