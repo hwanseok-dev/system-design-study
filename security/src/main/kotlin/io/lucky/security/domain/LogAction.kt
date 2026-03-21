@@ -21,4 +21,7 @@ object LogAction {
     const val CONSUME_CANCEL_CONFIRMED = "consumeCancelConfirmed"
     const val CONSUME_CANCEL_CONFIRMED_FAILED = "consumeCancelConfirmedFailed"
     const val SIMULATE_CANCEL_CONFIRMED = "simulateCancelConfirmed"
+    const val EXECUTION_SKIPPED_CANCELLED = "executionSkippedCancelled"
+    const val EXECUTION_SKIPPED_DUPLICATE = "executionSkippedDuplicate"
+    const val CANCEL_SKIPPED_DUPLICATE = "cancelSkippedDuplicate"
 }

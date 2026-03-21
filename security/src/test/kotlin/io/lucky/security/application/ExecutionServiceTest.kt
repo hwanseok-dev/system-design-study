@@ -341,5 +341,89 @@ class ExecutionServiceTest(
                     filledOutbox.size shouldBe 1
                 }
             }
+
+            context("취소된 주문에 체결이 도착한 경우") {
+                it("Lua script가 -1을 반환하고 체결이 무시된다") {
+                    balanceRepository.save(Balance(userId = 1L, cashAmount = BigDecimal("1000000")))
+                    val order =
+                        orderService.create(
+                            userId = 1L,
+                            stockCode = "005930",
+                            orderType = OrderType.LIMIT,
+                            side = OrderSide.BUY,
+                            quantity = 10,
+                            price = BigDecimal("50000"),
+                        )
+                    orderService.onValidated(order.id)
+                    orderService.submitOrder(order.id)
+
+                    // Cancel first
+                    orderService.onCancelConfirmed(order.id)
+
+                    // Execution arrives after cancel
+                    executionService.applyExecution(
+                        ExecutionResultPayload(
+                            orderId = order.id,
+                            userId = 1L,
+                            stockCode = "005930",
+                            side = "BUY",
+                            quantity = 10,
+                            price = BigDecimal("50000"),
+                            exchangeExecId = UUID.randomUUID().toString(),
+                            executedAt = Instant.now(),
+                        ),
+                    )
+
+                    // No execution saved
+                    executionRepository.findByOrderId(order.id).size shouldBe 0
+
+                    // Balance fully restored
+                    val balance = balanceRepository.findByUserId(1L)!!
+                    balance.lockedAmount shouldBeEqualComparingTo BigDecimal.ZERO
+                    balance.cashAmount shouldBeEqualComparingTo BigDecimal("1000000")
+                }
+            }
+
+            context("같은 체결이 중복 수신된 경우") {
+                it("Lua script가 -2를 반환하고 두 번째 체결이 무시된다") {
+                    balanceRepository.save(Balance(userId = 1L, cashAmount = BigDecimal("1000000")))
+                    val order =
+                        orderService.create(
+                            userId = 1L,
+                            stockCode = "005930",
+                            orderType = OrderType.LIMIT,
+                            side = OrderSide.BUY,
+                            quantity = 10,
+                            price = BigDecimal("50000"),
+                        )
+                    orderService.onValidated(order.id)
+                    orderService.submitOrder(order.id)
+
+                    val execId = UUID.randomUUID().toString()
+                    val payload =
+                        ExecutionResultPayload(
+                            orderId = order.id,
+                            userId = 1L,
+                            stockCode = "005930",
+                            side = "BUY",
+                            quantity = 5,
+                            price = BigDecimal("50000"),
+                            exchangeExecId = execId,
+                            executedAt = Instant.now(),
+                        )
+
+                    // First
+                    executionService.applyExecution(payload)
+                    // Duplicate
+                    executionService.applyExecution(payload)
+
+                    // Only one execution saved
+                    executionRepository.findByOrderId(order.id).size shouldBe 1
+
+                    // Redis count is 5, not 10
+                    val filledKey = "{order:${order.id}}:filled_qty"
+                    redisTemplate.opsForValue().get(filledKey) shouldBe "5"
+                }
+            }
         }
     })
