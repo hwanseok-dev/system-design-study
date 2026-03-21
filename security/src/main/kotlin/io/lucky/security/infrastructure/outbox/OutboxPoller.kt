@@ -29,6 +29,7 @@ class OutboxPoller(
             when (message.eventType) {
                 OutboxEventType.ORDER_EXECUTE -> orderService.submitOrder(message.aggregateId)
                 OutboxEventType.ORDER_VALIDATE,
+                OutboxEventType.ORDER_FILLED,
                 OutboxEventType.EXECUTION_SETTLED,
                 -> Unit
             }
