@@ -17,7 +17,9 @@ import io.lucky.security.infrastructure.outbox.OutboxEventType
 import io.lucky.security.infrastructure.outbox.OutboxRepository
 import io.lucky.security.infrastructure.persistence.BalanceJournalRepository
 import io.lucky.security.infrastructure.persistence.BalanceRepository
+import io.lucky.security.infrastructure.persistence.ExecutionRepository
 import io.lucky.security.infrastructure.persistence.OrderRepository
+import io.lucky.security.infrastructure.persistence.SettlementRepository
 import io.lucky.security.infrastructure.persistence.StockHoldingRepository
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.ActiveProfiles
@@ -34,10 +36,14 @@ class OrderServiceTest(
     private val orderRepository: OrderRepository,
     private val journalRepository: BalanceJournalRepository,
     private val outboxRepository: OutboxRepository,
+    private val executionRepository: ExecutionRepository,
+    private val settlementRepository: SettlementRepository,
 ) : DescribeSpec({
 
         beforeEach {
             outboxRepository.deleteAll()
+            settlementRepository.deleteAll()
+            executionRepository.deleteAll()
             journalRepository.deleteAll()
             orderRepository.deleteAll()
             stockHoldingRepository.deleteAll()

@@ -19,7 +19,9 @@ class RabbitConfig {
         const val RK_ORDER_REJECTED = "order.rejected"
         const val RK_ORDER_EXECUTE = "order.execute"
         const val RK_ORDER_CANCEL_CONFIRMED = "order.cancel.confirmed"
+        const val RK_EXECUTION_RESULT = "execution.result"
         const val RK_EXECUTION_SETTLED = "execution.settled"
+        const val RK_NOTIFY_ORDER_FILLED = "notify.order.filled"
     }
 
     @Bean
