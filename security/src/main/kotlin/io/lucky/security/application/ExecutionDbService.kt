@@ -5,6 +5,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.lucky.security.domain.EntityNotFoundException
 import io.lucky.security.domain.LogAction
 import io.lucky.security.domain.execution.Execution
+import io.lucky.security.domain.order.Order
 import io.lucky.security.domain.order.OrderSide
 import io.lucky.security.domain.settlement.Settlement
 import io.lucky.security.infrastructure.messaging.RabbitConfig
@@ -12,8 +13,10 @@ import io.lucky.security.infrastructure.outbox.AggregateType
 import io.lucky.security.infrastructure.outbox.OutboxEventType
 import io.lucky.security.infrastructure.outbox.OutboxMessage
 import io.lucky.security.infrastructure.outbox.OutboxRepository
+import io.lucky.security.infrastructure.persistence.ExecutionBatchRepository
 import io.lucky.security.infrastructure.persistence.ExecutionRepository
 import io.lucky.security.infrastructure.persistence.OrderRepository
+import io.lucky.security.infrastructure.persistence.SettlementBatchRepository
 import io.lucky.security.infrastructure.persistence.SettlementRepository
 import jakarta.persistence.OptimisticLockException
 import org.springframework.data.redis.core.StringRedisTemplate
@@ -21,6 +24,7 @@ import org.springframework.retry.annotation.Backoff
 import org.springframework.retry.annotation.Retryable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -36,6 +40,8 @@ class ExecutionDbService(
     private val settlementRepository: SettlementRepository,
     private val objectMapper: ObjectMapper,
     private val redisTemplate: StringRedisTemplate,
+    private val executionBatchRepository: ExecutionBatchRepository,
+    private val settlementBatchRepository: SettlementBatchRepository,
 ) {
     companion object {
         private val FILLED_QTY_TTL = Duration.ofHours(24)
@@ -59,9 +65,8 @@ class ExecutionDbService(
                 .atZone(ZoneId.of("Asia/Seoul"))
                 .toLocalDate()
 
-        // Double-check: cancel flag may have been set after Lua script
         val cancelKey = "{order:${payload.orderId}}:cancelled"
-        if (redisTemplate.hasKey(cancelKey) == true) {
+        if (redisTemplate.hasKey(cancelKey)) {
             logger.info {
                 "action=${LogAction.EXECUTION_SKIPPED_CANCELLED} orderId=${payload.orderId} " +
                     "exchangeExecId=${payload.exchangeExecId} phase=doubleCheck"
@@ -69,7 +74,6 @@ class ExecutionDbService(
             return
         }
 
-        // 1. Save execution
         val execution =
             executionRepository.save(
                 Execution(
@@ -87,28 +91,102 @@ class ExecutionDbService(
             )
         execution.apply()
 
-        // 2. Update order status
         val order =
             orderRepository.findById(payload.orderId).orElseThrow {
                 EntityNotFoundException("Order", payload.orderId)
             }
         order.applyExecution(payload.quantity, payload.price)
+        applyBalance(order, side, payload.quantity, payload.price)
 
-        // 3. Update balance
+        checkFilledAndPublish(order, totalFilled)
+
+        settlementRepository.save(
+            Settlement(
+                executionId = execution.id,
+                orderId = order.id,
+                userId = order.userId,
+                stockCode = order.stockCode,
+                side = side,
+                quantity = payload.quantity,
+                amount = amount,
+                settlementDate = settlementDate,
+            ),
+        )
+
+        logger.info {
+            "action=${LogAction.APPLY_EXECUTION} executionId=${execution.id} orderId=${payload.orderId} " +
+                "userId=${payload.userId} side=$side quantity=${payload.quantity} price=${payload.price} " +
+                "totalFilled=$totalFilled orderQuantity=${order.quantity}"
+        }
+    }
+
+    @Retryable(
+        value = [OptimisticLockException::class],
+        maxAttempts = 3,
+        backoff = Backoff(delay = 100),
+    )
+    @Transactional
+    fun applyExecutionBatch(
+        orderId: Long,
+        executions: List<ExecutionResultPayload>,
+        totalFilled: Long,
+    ) {
+        val cancelKey = "{order:$orderId}:cancelled"
+        if (redisTemplate.hasKey(cancelKey)) {
+            logger.info {
+                "action=${LogAction.EXECUTION_SKIPPED_CANCELLED} orderId=$orderId phase=batchDoubleCheck"
+            }
+            return
+        }
+
+        executionBatchRepository.batchInsert(executions)
+
+        val order =
+            orderRepository.findById(orderId).orElseThrow {
+                EntityNotFoundException("Order", orderId)
+            }
+        val side = OrderSide.valueOf(executions.first().side)
+
+        for (exec in executions) {
+            order.applyExecution(exec.quantity, exec.price)
+            applyBalance(order, side, exec.quantity, exec.price)
+        }
+
+        settlementBatchRepository.batchInsert(executions, side.name)
+
+        checkFilledAndPublish(order, totalFilled)
+
+        logger.info {
+            "action=${LogAction.APPLY_EXECUTION_BATCH} orderId=$orderId " +
+                "batchSize=${executions.size} totalFilled=$totalFilled orderQuantity=${order.quantity}"
+        }
+    }
+
+    private fun applyBalance(
+        order: Order,
+        side: OrderSide,
+        quantity: Int,
+        price: BigDecimal,
+    ) {
+        val amount = price * quantity.toBigDecimal()
         when (side) {
             OrderSide.BUY -> {
-                balanceService.confirmBuyExecution(order.userId, execution.id, order.stockCode, amount)
-                balanceService.addStock(order.userId, execution.id, order.stockCode, payload.quantity, payload.price)
+                balanceService.confirmBuyExecution(order.userId, order.id, order.stockCode, amount)
+                balanceService.addStock(order.userId, order.id, order.stockCode, quantity, price)
                 order.consumeLockedAmount(amount)
             }
             OrderSide.SELL -> {
-                balanceService.confirmSellExecution(order.userId, execution.id, order.stockCode, payload.quantity)
-                balanceService.addCash(order.userId, execution.id, order.stockCode, amount)
+                balanceService.confirmSellExecution(order.userId, order.id, order.stockCode, quantity)
+                balanceService.addCash(order.userId, order.id, order.stockCode, amount)
             }
         }
+    }
 
-        // 4. Redis return value determines FILLED — exactly one consumer enters
-        val filledKey = "{order:${payload.orderId}}:filled_qty"
+    private fun checkFilledAndPublish(
+        order: Order,
+        totalFilled: Long,
+    ) {
+        val filledKey = "{order:${order.id}}:filled_qty"
         if (totalFilled >= order.quantity.toLong()) {
             outboxRepository.save(
                 OutboxMessage(
@@ -134,26 +212,6 @@ class ExecutionDbService(
             if (totalFilled == order.quantity.toLong()) {
                 redisTemplate.expire(filledKey, FILLED_QTY_TTL)
             }
-        }
-
-        // 5. Create settlement record
-        settlementRepository.save(
-            Settlement(
-                executionId = execution.id,
-                orderId = order.id,
-                userId = order.userId,
-                stockCode = order.stockCode,
-                side = side,
-                quantity = payload.quantity,
-                amount = amount,
-                settlementDate = settlementDate,
-            ),
-        )
-
-        logger.info {
-            "action=${LogAction.APPLY_EXECUTION} executionId=${execution.id} orderId=${payload.orderId} " +
-                "userId=${payload.userId} side=$side quantity=${payload.quantity} price=${payload.price} " +
-                "totalFilled=$totalFilled orderQuantity=${order.quantity}"
         }
     }
 }
