@@ -15,11 +15,13 @@ class OrderQueueConfig {
         const val REJECTED_QUEUE = "queue.order.rejected"
         const val CANCEL_CONFIRMED_QUEUE = "queue.order.cancel.confirmed"
         const val VALIDATE_QUEUE = "queue.order.validate"
+        const val CANCEL_QUEUE = "queue.order.cancel"
 
         const val ORDER_DLX = "order.dlx"
         const val VALIDATED_DLQ = "queue.order.validated.dlq"
         const val REJECTED_DLQ = "queue.order.rejected.dlq"
         const val CANCEL_CONFIRMED_DLQ = "queue.order.cancel.confirmed.dlq"
+        const val CANCEL_DLQ = "queue.order.cancel.dlq"
     }
 
     // Main queues
@@ -51,6 +53,13 @@ class OrderQueueConfig {
             .withArgument("x-dead-letter-exchange", ORDER_DLX)
             .build()
 
+    @Bean
+    fun cancelQueue(): Queue =
+        QueueBuilder
+            .durable(CANCEL_QUEUE)
+            .withArgument("x-dead-letter-exchange", ORDER_DLX)
+            .build()
+
     // Bindings to order.exchange
     @Bean
     fun validatedBinding(
@@ -75,6 +84,12 @@ class OrderQueueConfig {
         validateQueue: Queue,
         orderExchange: DirectExchange,
     ): Binding = BindingBuilder.bind(validateQueue).to(orderExchange).with(RabbitConfig.RK_ORDER_VALIDATE)
+
+    @Bean
+    fun cancelBinding(
+        cancelQueue: Queue,
+        orderExchange: DirectExchange,
+    ): Binding = BindingBuilder.bind(cancelQueue).to(orderExchange).with(RabbitConfig.RK_ORDER_CANCEL)
 
     // DLX and DLQs
     @Bean
@@ -106,4 +121,13 @@ class OrderQueueConfig {
         cancelConfirmedDlq: Queue,
         orderDlx: DirectExchange,
     ): Binding = BindingBuilder.bind(cancelConfirmedDlq).to(orderDlx).with(CANCEL_CONFIRMED_QUEUE)
+
+    @Bean
+    fun cancelDlq(): Queue = Queue(CANCEL_DLQ)
+
+    @Bean
+    fun cancelDlqBinding(
+        cancelDlq: Queue,
+        orderDlx: DirectExchange,
+    ): Binding = BindingBuilder.bind(cancelDlq).to(orderDlx).with(CANCEL_QUEUE)
 }

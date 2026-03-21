@@ -72,6 +72,7 @@ class ExecutionService(
             OrderSide.BUY -> {
                 balanceService.confirmBuyExecution(order.userId, execution.id, order.stockCode, amount)
                 balanceService.addStock(order.userId, execution.id, order.stockCode, payload.quantity, payload.price)
+                order.consumeLockedAmount(amount)
             }
             OrderSide.SELL -> {
                 balanceService.confirmSellExecution(order.userId, execution.id, order.stockCode, payload.quantity)

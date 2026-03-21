@@ -16,4 +16,9 @@ object LogAction {
     const val CONSUME_EXECUTION = "consumeExecution"
     const val CONSUME_EXECUTION_FAILED = "consumeExecutionFailed"
     const val SIMULATE_EXECUTION = "simulateExecution"
+    const val REQUEST_CANCEL = "requestCancel"
+    const val ORDER_CANCELLED = "orderCancelled"
+    const val CONSUME_CANCEL_CONFIRMED = "consumeCancelConfirmed"
+    const val CONSUME_CANCEL_CONFIRMED_FAILED = "consumeCancelConfirmedFailed"
+    const val SIMULATE_CANCEL_CONFIRMED = "simulateCancelConfirmed"
 }

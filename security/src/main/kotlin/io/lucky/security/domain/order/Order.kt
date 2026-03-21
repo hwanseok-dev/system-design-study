@@ -42,6 +42,22 @@ class Order(
     @Version
     val version: Long = 0,
 ) : BaseEntity() {
+    fun initLockedAmount() {
+        check(lockedAmount == BigDecimal.ZERO) { "lockedAmount already initialized: $lockedAmount" }
+        lockedAmount =
+            when (orderType) {
+                OrderType.LIMIT -> price!! * quantity.toBigDecimal()
+                OrderType.MARKET -> throw UnsupportedOperationException("Market order lock TBD")
+            }
+    }
+
+    // Execution price can differ from order price (e.g. limit 50000, filled at 49000).
+    // lockedAmount must track actual remaining lock so cancel restores the correct amount.
+    fun consumeLockedAmount(amount: BigDecimal) {
+        check(lockedAmount >= amount) { "Cannot consume more than locked: locked=$lockedAmount, consume=$amount" }
+        lockedAmount -= amount
+    }
+
     fun validate() {
         status = status.transitTo(OrderStatus.VALIDATED)
     }
@@ -49,6 +65,21 @@ class Order(
     fun submit() {
         status = status.transitTo(OrderStatus.SUBMITTED)
     }
+
+    fun cancel(): Int {
+        status = status.transitTo(OrderStatus.CANCELLED)
+        return quantity - filledQuantity
+    }
+
+    fun reject() {
+        status = status.transitTo(OrderStatus.REJECTED)
+    }
+
+    fun settle() {
+        status = status.transitTo(OrderStatus.SETTLED)
+    }
+
+    fun remainingQuantity(): Int = quantity - filledQuantity
 
     /**
      * Apply a partial or full execution to this order.
@@ -69,19 +100,4 @@ class Order(
         status = status.transitTo(if (filledQuantity >= quantity) OrderStatus.FILLED else OrderStatus.PARTIAL_FILLED)
         return status
     }
-
-    fun cancel(): Int {
-        status = status.transitTo(OrderStatus.CANCELLED)
-        return quantity - filledQuantity
-    }
-
-    fun reject() {
-        status = status.transitTo(OrderStatus.REJECTED)
-    }
-
-    fun settle() {
-        status = status.transitTo(OrderStatus.SETTLED)
-    }
-
-    fun remainingQuantity(): Int = quantity - filledQuantity
 }
