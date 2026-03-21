@@ -34,6 +34,11 @@ class OrderController(
         return order.toResponse()
     }
 
+    @PostMapping("/{id}/cancel")
+    fun cancelOrder(
+        @PathVariable id: Long,
+    ): OrderResponse = orderService.requestCancel(id).toResponse()
+
     @GetMapping("/{id}")
     fun findById(
         @PathVariable id: Long,

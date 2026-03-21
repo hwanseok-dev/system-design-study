@@ -6,6 +6,7 @@ import io.lucky.security.domain.EntityNotFoundException
 import io.lucky.security.domain.LogAction
 import io.lucky.security.domain.order.Order
 import io.lucky.security.domain.order.OrderSide
+import io.lucky.security.domain.order.OrderStatus
 import io.lucky.security.domain.order.OrderType
 import io.lucky.security.infrastructure.messaging.RabbitConfig
 import io.lucky.security.infrastructure.outbox.AggregateType
@@ -47,10 +48,9 @@ class OrderService(
 
         when (order.side) {
             OrderSide.BUY -> {
-                val lockAmount = calculateLockAmount(order)
-                order.lockedAmount = lockAmount
+                order.initLockedAmount()
                 val saved = orderRepository.save(order)
-                balanceService.lockCache(order.userId, saved.id, order.stockCode, lockAmount)
+                balanceService.lockCache(order.userId, saved.id, order.stockCode, order.lockedAmount)
             }
             OrderSide.SELL -> {
                 orderRepository.save(order)
@@ -153,6 +153,92 @@ class OrderService(
         logger.info { "action=${LogAction.SUBMIT_ORDER} orderId=$orderId userId=${order.userId}" }
     }
 
+    @Transactional
+    fun requestCancel(orderId: Long): Order {
+        val order =
+            orderRepository.findById(orderId).orElseThrow {
+                EntityNotFoundException("Order", orderId)
+            }
+        check(order.status in setOf(OrderStatus.SUBMITTED, OrderStatus.PARTIAL_FILLED)) {
+            "Cannot cancel order in status ${order.status}"
+        }
+
+        outboxRepository.save(
+            OutboxMessage(
+                aggregateType = AggregateType.ORDER,
+                aggregateId = orderId,
+                eventType = OutboxEventType.ORDER_CANCEL,
+                exchange = RabbitConfig.ORDER_EXCHANGE,
+                routingKey = RabbitConfig.RK_ORDER_CANCEL,
+                payload =
+                    objectMapper.writeValueAsString(
+                        OrderCancelPayload(
+                            orderId = order.id,
+                            userId = order.userId,
+                            stockCode = order.stockCode,
+                            side = order.side.name,
+                        ),
+                    ),
+            ),
+        )
+
+        logger.info {
+            "action=${LogAction.REQUEST_CANCEL} orderId=$orderId userId=${order.userId}"
+        }
+
+        return order
+    }
+
+    @Transactional
+    fun onCancelConfirmed(orderId: Long) {
+        val order =
+            orderRepository.findById(orderId).orElseThrow {
+                EntityNotFoundException("Order", orderId)
+            }
+        val remainingQty = order.cancel()
+
+        when (order.side) {
+            OrderSide.BUY -> {
+                val remainingAmount = calculateRemainingLockAmount(order, remainingQty)
+                balanceService.unlockCash(order.userId, order.id, order.stockCode, remainingAmount)
+            }
+            OrderSide.SELL -> {
+                balanceService.unlockStock(order.userId, order.id, order.stockCode, remainingQty)
+            }
+        }
+
+        outboxRepository.save(
+            OutboxMessage(
+                aggregateType = AggregateType.ORDER,
+                aggregateId = orderId,
+                eventType = OutboxEventType.ORDER_CANCELLED,
+                exchange = RabbitConfig.NOTIFICATION_EXCHANGE,
+                routingKey = RabbitConfig.RK_NOTIFY_ORDER_CANCELLED,
+                payload =
+                    objectMapper.writeValueAsString(
+                        OrderCancelledPayload(
+                            orderId = order.id,
+                            userId = order.userId,
+                            stockCode = order.stockCode,
+                            side = order.side.name,
+                            cancelledQuantity = remainingQty,
+                            restoredAmount =
+                                if (order.side == OrderSide.BUY) {
+                                    calculateRemainingLockAmount(order, remainingQty)
+                                } else {
+                                    null
+                                },
+                        ),
+                    ),
+            ),
+        )
+
+        logger.info {
+            "action=${LogAction.ORDER_CANCELLED} orderId=$orderId userId=${order.userId} " +
+                "remainingQty=$remainingQty"
+        }
+    }
+
     @Transactional(readOnly = true)
     fun findById(orderId: Long): Order =
         orderRepository.findById(orderId).orElseThrow {
@@ -162,9 +248,10 @@ class OrderService(
     @Transactional(readOnly = true)
     fun findByUserId(userId: Long): List<Order> = orderRepository.findByUserId(userId)
 
-    private fun calculateLockAmount(order: Order): BigDecimal =
-        when (order.orderType) {
-            OrderType.LIMIT -> order.price!! * order.quantity.toBigDecimal()
-            OrderType.MARKET -> throw UnsupportedOperationException("Market order lock TBD")
-        }
+    // Returns actual remaining lock, not price * remainingQty.
+    // Execution price can differ from order price, so lockedAmount is tracked per execution.
+    private fun calculateRemainingLockAmount(
+        order: Order,
+        remainingQty: Int,
+    ): BigDecimal = order.lockedAmount
 }
