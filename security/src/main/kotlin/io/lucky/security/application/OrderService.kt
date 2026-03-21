@@ -14,6 +14,9 @@ import io.lucky.security.infrastructure.outbox.OutboxEventType
 import io.lucky.security.infrastructure.outbox.OutboxMessage
 import io.lucky.security.infrastructure.outbox.OutboxRepository
 import io.lucky.security.infrastructure.persistence.OrderRepository
+import io.lucky.security.infrastructure.redis.RedisScriptConfig
+import org.springframework.data.redis.core.StringRedisTemplate
+import org.springframework.data.redis.core.script.DefaultRedisScript
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -26,6 +29,9 @@ class OrderService(
     private val balanceService: BalanceService,
     private val outboxRepository: OutboxRepository,
     private val objectMapper: ObjectMapper,
+    private val redisTemplate: StringRedisTemplate,
+    private val cancelOrderScript: DefaultRedisScript<Long>,
+    private val orderCancelDbService: OrderCancelDbService,
 ) {
     @Transactional
     fun create(
@@ -189,54 +195,23 @@ class OrderService(
         return order
     }
 
-    @Transactional
     fun onCancelConfirmed(orderId: Long) {
-        val order =
-            orderRepository.findById(orderId).orElseThrow {
-                EntityNotFoundException("Order", orderId)
-            }
-        val remainingQty = order.cancel()
+        val cancelKey = "{order:$orderId}:cancelled"
+        val filledKey = "{order:$orderId}:filled_qty"
 
-        when (order.side) {
-            OrderSide.BUY -> {
-                val remainingAmount = calculateRemainingLockAmount(order, remainingQty)
-                balanceService.unlockCash(order.userId, order.id, order.stockCode, remainingAmount)
-            }
-            OrderSide.SELL -> {
-                balanceService.unlockStock(order.userId, order.id, order.stockCode, remainingQty)
-            }
+        val result =
+            redisTemplate.execute(
+                cancelOrderScript,
+                listOf(cancelKey, filledKey),
+                RedisScriptConfig.CANCEL_KEY_TTL_SECONDS.toString(),
+            )
+
+        if (result == -1L) {
+            logger.info { "action=${LogAction.CANCEL_SKIPPED_DUPLICATE} orderId=$orderId" }
+            return
         }
 
-        outboxRepository.save(
-            OutboxMessage(
-                aggregateType = AggregateType.ORDER,
-                aggregateId = orderId,
-                eventType = OutboxEventType.ORDER_CANCELLED,
-                exchange = RabbitConfig.NOTIFICATION_EXCHANGE,
-                routingKey = RabbitConfig.RK_NOTIFY_ORDER_CANCELLED,
-                payload =
-                    objectMapper.writeValueAsString(
-                        OrderCancelledPayload(
-                            orderId = order.id,
-                            userId = order.userId,
-                            stockCode = order.stockCode,
-                            side = order.side.name,
-                            cancelledQuantity = remainingQty,
-                            restoredAmount =
-                                if (order.side == OrderSide.BUY) {
-                                    calculateRemainingLockAmount(order, remainingQty)
-                                } else {
-                                    null
-                                },
-                        ),
-                    ),
-            ),
-        )
-
-        logger.info {
-            "action=${LogAction.ORDER_CANCELLED} orderId=$orderId userId=${order.userId} " +
-                "remainingQty=$remainingQty"
-        }
+        orderCancelDbService.applyCancelToDb(orderId)
     }
 
     @Transactional(readOnly = true)
@@ -247,11 +222,4 @@ class OrderService(
 
     @Transactional(readOnly = true)
     fun findByUserId(userId: Long): List<Order> = orderRepository.findByUserId(userId)
-
-    // Returns actual remaining lock, not price * remainingQty.
-    // Execution price can differ from order price, so lockedAmount is tracked per execution.
-    private fun calculateRemainingLockAmount(
-        order: Order,
-        remainingQty: Int,
-    ): BigDecimal = order.lockedAmount
 }
