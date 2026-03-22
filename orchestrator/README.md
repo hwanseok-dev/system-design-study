@@ -1,5 +1,9 @@
 # Orchestrator Module
 
+A workflow orchestrator that executes tasks defined as a DAG (Directed Acyclic Graph).
+Each task is dispatched to worker services via RabbitMQ. Workers report success or failure asynchronously.
+The orchestrator tracks completion counts, manages state transitions, and triggers downstream tasks when dependencies are met.
+
 ## 1. Workflow DAG Examples
 
 #### Linear

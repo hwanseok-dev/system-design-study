@@ -1,5 +1,9 @@
 # Security Module
 
+A stock order execution system that handles the full lifecycle of a trade: order creation, compliance validation,
+exchange submission, partial/full execution, cancellation, and settlement.
+Balance (cash and stock holdings) is managed with journaling, and all inter-service communication flows through RabbitMQ with transactional outbox.
+
 ## 1. Order State Machine
 
 ```mermaid
