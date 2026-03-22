@@ -21,3 +21,5 @@ TBD
 - [Batch Consumer + JDBC Batch](docs/batch-consumer-jdbc-batch.md) — Reducing DB round-trips with RabbitMQ batch consumption, groupBy, and JDBC batch insert
 - [Redis → RDB Count Sync](docs/redis-rdb-count-sync.md) — Periodic idempotent synchronization of Redis counts to RDB with monotonic-increase guard
 - [Distributed Lock](docs/distributed-lock.md) — Serializing concurrent order creation per user with Redisson RLock to prevent balance over-deduction
+- [Transactional Outbox + Publisher Confirm](docs/outbox-publisher-confirm.md) — At-least-once publish guarantee by writing messages into the same DB transaction, polling with pessimistic SKIP LOCKED, and marking published only after RabbitMQ correlated ACK
+- [Idempotent Consumer](docs/idempotent-consumer.md) — Two-layer dedup (Redis atomic SET NX in Lua + DB UNIQUE constraint), manual ACK, and DLQ routing to safely absorb redelivered messages
