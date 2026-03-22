@@ -26,4 +26,5 @@ object LogAction {
     const val CANCEL_SKIPPED_DUPLICATE = "cancelSkippedDuplicate"
     const val APPLY_EXECUTION_BATCH = "applyExecutionBatch"
     const val CONSUME_EXECUTION_BATCH = "consumeExecutionBatch"
+    const val SYNC_FILLED_QTY = "syncFilledQuantity"
 }
