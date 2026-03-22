@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: bff
+  datasource:
+    url: jdbc:postgresql://localhost:5438/bff
+    username: study
+    password: study
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  rabbitmq:
+    host: localhost
+    port: 5678
+    username: admin
+    password: admin
+  data:
+    redis:
+      host: localhost
+      port: 6378
