@@ -90,17 +90,26 @@ flowchart LR
     classDef simulator fill:#6b7280,stroke:#4b5563,color:#fff,stroke-dasharray: 5 5
     classDef dropped fill:#ef4444,stroke:#dc2626,color:#fff,stroke-dasharray: 5 5
 
-    EE((execution.exchange<br/>Direct)):::exchange
+    EE((execution.exchange<br/>x-consistent-hash)):::exchange
     NE((notification.exchange<br/>Topic)):::exchange
 
-    Q7[[queue.execution.result]]:::queue
+    Q7[[queue.execution.0]]:::queue
+    Q8[[queue.execution.1]]:::queue
+    Q9[[queue.execution.2]]:::queue
+    Q10[[queue.execution.3]]:::queue
 
     EXSIM[ExecutionSimulator]:::simulator
     ERC[ExecutionResultConsumer]:::consumer
 
-    EXSIM -.->|execution.result| EE
-    EE -->|execution.result| Q7
+    EXSIM -.->|orderId| EE
+    EE -->|hash| Q7
+    EE -->|hash| Q8
+    EE -->|hash| Q9
+    EE -->|hash| Q10
     Q7 --> ERC
+    Q8 --> ERC
+    Q9 --> ERC
+    Q10 --> ERC
 
     NE -->|notify.order.filled| DROP1[/unimplemented/]:::dropped
     NE -->|notify.order.cancelled| DROP2[/unimplemented/]:::dropped
@@ -122,7 +131,10 @@ flowchart LR
     Q4[[queue.order.execute]]:::queue
     Q5[[queue.order.cancel]]:::queue
     Q6[[queue.order.cancel.confirmed]]:::queue
-    Q7[[queue.execution.result]]:::queue
+    Q7[[queue.execution.0]]:::queue
+    Q8[[queue.execution.1]]:::queue
+    Q9[[queue.execution.2]]:::queue
+    Q10[[queue.execution.3]]:::queue
 
     ODLX((order.dlx)):::exchange
     EDLX((execution.dlx)):::exchange
@@ -131,7 +143,7 @@ flowchart LR
     DLQ2[[*.rejected.dlq]]:::dlq
     DLQ3[[*.cancel.confirmed.dlq]]:::dlq
     DLQ4[[*.cancel.dlq]]:::dlq
-    DLQ5[[*.execution.result.dlq]]:::dlq
+    DLQ5[[*.execution.dlq.0-3]]:::dlq
 
     Q1 -.->|nack| ODLX
     Q2 -.->|nack| ODLX
@@ -146,5 +158,8 @@ flowchart LR
     ODLX --> DLQ4
 
     Q7 -.->|nack| EDLX
+    Q8 -.->|nack| EDLX
+    Q9 -.->|nack| EDLX
+    Q10 -.->|nack| EDLX
     EDLX --> DLQ5
 ```
