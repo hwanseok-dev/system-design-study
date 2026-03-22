@@ -52,10 +52,9 @@ class ExecutionServiceTest(
             orderRepository.deleteAll()
             stockHoldingRepository.deleteAll()
             balanceRepository.deleteAll()
-            redisTemplate.connectionFactory
-                ?.connection
-                ?.serverCommands()
-                ?.flushDb()
+            redisTemplate.execute { connection ->
+                connection.serverCommands().flushDb()
+            }
         }
 
         describe("applyExecution") {
